@@ -1,15 +1,16 @@
-.PHONY: help install install-dev test test-unit test-integration lint format type-check clean build run
+.PHONY: help venv install install-dev test test-unit test-integration lint format type-check clean clean-venv build run
 
 # Default target
 .DEFAULT_GOAL := help
 
 # Variables
-PYTHON := python3
-PIP := pip3
-PYTEST := pytest
-BLACK := black
-RUFF := ruff
-MYPY := mypy
+VENV := .venv
+PYTHON := $(VENV)/bin/python3
+PIP := $(VENV)/bin/pip
+PYTEST := $(VENV)/bin/pytest
+BLACK := $(VENV)/bin/black
+RUFF := $(VENV)/bin/ruff
+MYPY := $(VENV)/bin/mypy
 PODMAN_COMPOSE := podman-compose
 
 # Colors for help output
@@ -24,9 +25,19 @@ help: ## Display available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 	@echo "$(YELLOW)Note:$(NC) For container operations like 'stop' and 'logs', use 'podman-compose stop' and 'podman-compose logs' directly."
-	@echo "$(YELLOW)Note:$(NC) For formatting, run 'black .' directly or it's included in 'make lint'."
+	@echo "$(YELLOW)Note:$(NC) For formatting, run 'make format' or it's included in 'make lint'."
 
-install: ## Install project and development dependencies
+venv: ## Create virtual environment in .venv
+	@if [ ! -d "$(VENV)" ]; then \
+		echo "$(BLUE)Creating virtual environment in $(VENV)...$(NC)"; \
+		python3 -m venv $(VENV); \
+		echo "$(GREEN)Virtual environment created!$(NC)"; \
+	else \
+		echo "$(YELLOW)Virtual environment already exists in $(VENV)$(NC)"; \
+	fi
+
+install: venv ## Install project and development dependencies
+	$(PIP) install --upgrade pip
 	$(PIP) install -e .
 	$(PIP) install -r requirements-dev.txt
 
@@ -47,14 +58,14 @@ lint: ## Run all linters (black, ruff, mypy) and check formatting
 	@echo "$(BLUE)Running ruff...$(NC)"
 	$(RUFF) check .
 	@echo "$(BLUE)Running mypy...$(NC)"
-	$(MYPY) src/
+	$(MYPY) src/ --namespace-packages --explicit-package-bases
 	@echo "$(GREEN)All linting checks passed!$(NC)"
 
 format: ## Auto-format code with black
 	$(BLACK) .
 
 type-check: ## Run mypy type checking only
-	$(MYPY) src/
+	$(MYPY) src/ --namespace-packages --explicit-package-bases
 
 build: ## Build Podman containers
 	$(PODMAN_COMPOSE) build
@@ -76,4 +87,13 @@ clean: ## Remove build artifacts, cache files, and Python bytecode
 	find . -type f -name ".coverage" -delete
 	rm -rf build/ dist/ .eggs/ 2>/dev/null || true
 	@echo "$(GREEN)Clean complete!$(NC)"
+
+clean-venv: ## Remove virtual environment
+	@if [ -d "$(VENV)" ]; then \
+		echo "$(BLUE)Removing virtual environment...$(NC)"; \
+		rm -rf $(VENV); \
+		echo "$(GREEN)Virtual environment removed!$(NC)"; \
+	else \
+		echo "$(YELLOW)Virtual environment not found$(NC)"; \
+	fi
 
