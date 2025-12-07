@@ -9,6 +9,7 @@ from src.shared.errors import FeatureNotFoundError
 from src.shared.git_utils import GitUtils
 
 
+@pytest.mark.unit
 class TestFeatureMetadataExtractor:
     """Test cases for FeatureMetadataExtractor class."""
 

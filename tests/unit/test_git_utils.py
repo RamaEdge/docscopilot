@@ -9,6 +9,7 @@ from src.shared.errors import GitCommandError, RepositoryNotFoundError
 from src.shared.git_utils import GitUtils
 
 
+@pytest.mark.unit
 class TestGitUtils:
     """Test cases for GitUtils class."""
 

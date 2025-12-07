@@ -8,6 +8,7 @@ from src.shared.errors import TemplateNotFoundError
 from src.templates_style_server.template_loader import TemplateLoader
 
 
+@pytest.mark.unit
 class TestTemplateLoader:
     """Test cases for TemplateLoader class."""
 

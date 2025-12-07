@@ -9,6 +9,7 @@ from src.shared.config import DocsRepoConfig
 from src.shared.errors import GitCommandError, InvalidPathError
 
 
+@pytest.mark.unit
 class TestRepoManager:
     """Test cases for RepoManager class."""
 
