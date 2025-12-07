@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  code-context-server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: docscopilot-code-context
+    ports:
+      - "8001:8000"
+    environment:
+      - SERVER_NAME=code-context
+      - WORKSPACE_ROOT=/workspace
+      - GIT_BINARY=git
+      - SUPPORTED_LANGUAGES=python
+    volumes:
+      - ./src:/app/src:ro
+      - ./workspace:/workspace:ro
+    networks:
+      - docscopilot-network
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  templates-style-server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: docscopilot-templates-style
+    ports:
+      - "8002:8000"
+    environment:
+      - SERVER_NAME=templates-style
+      - DOCSCOPILOT_TEMPLATES_PATH=/workspace/.docscopilot
+      - WORKSPACE_ROOT=/workspace
+    volumes:
+      - ./src:/app/src:ro
+      - ./workspace:/workspace:ro
+    networks:
+      - docscopilot-network
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  docs-repo-server:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: docscopilot-docs-repo
+    ports:
+      - "8003:8000"
+    environment:
+      - SERVER_NAME=docs-repo
+      - WORKSPACE_ROOT=/workspace
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-}
+    volumes:
+      - ./src:/app/src:ro
+      - ./workspace:/workspace:rw
+    networks:
+      - docscopilot-network
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+networks:
+  docscopilot-network:
+    driver: bridge
+
