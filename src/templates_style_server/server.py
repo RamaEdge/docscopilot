@@ -1,6 +1,7 @@
 """Templates + Style MCP Server implementation."""
 
 import asyncio
+import json
 from typing import Any
 
 from mcp.server import Server
@@ -8,8 +9,14 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from src.shared.config import TemplatesStyleConfig
-from src.shared.errors import DocsCopilotError, TemplateNotFoundError
+from src.shared.errors import (
+    DocsCopilotError,
+    ErrorCode,
+    TemplateNotFoundError,
+    ValidationError,
+)
 from src.shared.logging import setup_logging
+from src.shared.validation import validate_doc_type
 from src.templates_style_server.models import Glossary, StyleGuide, Template
 from src.templates_style_server.template_loader import TemplateLoader
 
@@ -88,12 +95,17 @@ async def call_tool(
             doc_type = arguments.get("doc_type")
 
             if not doc_type:
-                raise ValueError("doc_type is required")
+                raise ValidationError("doc_type is required")
 
-            content = template_loader.get_template(doc_type)
-            source = template_loader.get_template_source(doc_type)
+            # Validate doc_type
+            validated_doc_type = validate_doc_type(doc_type)
 
-            template = Template(doc_type=doc_type, content=content, source=source)
+            content = template_loader.get_template(validated_doc_type)
+            source = template_loader.get_template_source(validated_doc_type)
+
+            template = Template(
+                doc_type=validated_doc_type, content=content, source=source
+            )
 
             return [
                 TextContent(
@@ -138,12 +150,20 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except ValidationError as e:
+        logger.warning(f"Validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(e.to_dict(), indent=2),
+            )
+        ]
     except TemplateNotFoundError as e:
         logger.warning(f"Template not found: {e.message}")
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Template not found", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except DocsCopilotError as e:
@@ -151,7 +171,7 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "DocsCopilot error", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except Exception as e:
@@ -159,7 +179,14 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Unexpected error", "message": "{str(e)}"}}',
+                text=json.dumps(
+                    {
+                        "error": "UnexpectedError",
+                        "message": str(e),
+                        "error_code": ErrorCode.UNKNOWN_ERROR.value,
+                    },
+                    indent=2,
+                ),
             )
         ]
 

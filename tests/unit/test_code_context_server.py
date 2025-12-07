@@ -214,7 +214,7 @@ class TestCodeContextServer:
             )
             assert len(result) == 1
             assert "error" in result[0].text.lower()
-            assert "git error" in result[0].text.lower()
+            assert "GitCommandError" in result[0].text or "REPO_1002" in result[0].text
 
         asyncio.run(run_test())
 
@@ -231,7 +231,10 @@ class TestCodeContextServer:
             )
             assert len(result) == 1
             assert "error" in result[0].text.lower()
-            assert "git error" in result[0].text.lower()
+            assert (
+                "RepositoryNotFoundError" in result[0].text
+                or "REPO_1001" in result[0].text
+            )
 
         asyncio.run(run_test())
 
