@@ -3,7 +3,11 @@
 import subprocess
 from pathlib import Path
 
-from src.shared.errors import GitCommandError, RepositoryNotFoundError
+from src.shared.errors import (
+    GitCommandError,
+    GitTimeoutError,
+    RepositoryNotFoundError,
+)
 
 
 class GitUtils:
@@ -65,7 +69,7 @@ class GitUtils:
             )
             return result.stdout.strip()
         except subprocess.TimeoutExpired as e:
-            raise GitCommandError(
+            raise GitTimeoutError(
                 f"Git command timed out: {' '.join(cmd)}",
                 "Command exceeded 30 second timeout",
             ) from e

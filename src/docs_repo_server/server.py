@@ -1,6 +1,7 @@
 """Docs Repo MCP Server implementation."""
 
 import asyncio
+import json
 from typing import Any
 
 from mcp.server import Server
@@ -10,8 +11,14 @@ from mcp.types import TextContent, Tool
 from src.docs_repo_server.models import DocLocation, PRResult, WriteResult
 from src.docs_repo_server.repo_manager import RepoManager
 from src.shared.config import DocsRepoConfig
-from src.shared.errors import DocsCopilotError, InvalidPathError
+from src.shared.errors import (
+    DocsCopilotError,
+    ErrorCode,
+    InvalidPathError,
+    ValidationError,
+)
 from src.shared.logging import setup_logging
+from src.shared.validation import validate_branch_name, validate_doc_type
 
 # Initialize logger
 logger = setup_logging()
@@ -117,10 +124,16 @@ async def call_tool(
             doc_type = arguments.get("doc_type")
 
             if not feature_id:
-                raise ValueError("feature_id is required")
+                raise ValidationError("feature_id is required")
+
+            # Validate inputs
+            from src.shared.validation import validate_feature_id
+
+            validated_feature_id = validate_feature_id(feature_id)
+            validated_doc_type = validate_doc_type(doc_type)
 
             path, final_doc_type = repo_manager.suggest_doc_location(
-                feature_id, doc_type
+                validated_feature_id, validated_doc_type
             )
 
             location = DocLocation(
@@ -165,14 +178,26 @@ async def call_tool(
             files = arguments.get("files")
 
             if not branch:
-                raise ValueError("branch is required")
+                raise ValidationError("branch is required")
             if not title:
-                raise ValueError("title is required")
+                raise ValidationError("title is required")
             if not description:
-                raise ValueError("description is required")
+                raise ValidationError("description is required")
+
+            # Validate branch name
+            validated_branch = validate_branch_name(branch)
+
+            if not isinstance(title, str) or len(title) > 200:
+                raise ValidationError(
+                    "title must be a string with 200 characters or less"
+                )
+            if not isinstance(description, str) or len(description) > 10000:
+                raise ValidationError(
+                    "description must be a string with 10000 characters or less"
+                )
 
             # Create branch
-            if not repo_manager.create_branch(branch):
+            if not repo_manager.create_branch(validated_branch):
                 return [
                     TextContent(
                         type="text",
@@ -191,28 +216,35 @@ async def call_tool(
                 ]
 
             # Push branch
-            if not repo_manager.push_branch(branch):
+            if not repo_manager.push_branch(validated_branch):
                 return [
                     TextContent(
                         type="text",
-                        text='{"error": "Failed to push branch", "message": "Could not push branch to remote"}',
+                        text=json.dumps(
+                            {
+                                "error": "Failed to push branch",
+                                "message": "Could not push branch to remote",
+                                "error_code": ErrorCode.GIT_COMMAND_FAILED.value,
+                            },
+                            indent=2,
+                        ),
                     )
                 ]
 
             # Create PR (try GitHub first, then GitLab)
             pr_url, pr_number, success, message = repo_manager.create_github_pr(
-                branch, title, description
+                validated_branch, title, description
             )
 
             if not success:
                 # Try GitLab
                 pr_url, pr_number, success, message = repo_manager.create_gitlab_pr(
-                    branch, title, description
+                    validated_branch, title, description
                 )
 
             pr_result = PRResult(
                 pr_url=pr_url or "",
-                branch=branch,
+                branch=validated_branch,
                 pr_number=pr_number,
                 success=success,
                 message=message,
@@ -228,12 +260,20 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except ValidationError as e:
+        logger.warning(f"Validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(e.to_dict(), indent=2),
+            )
+        ]
     except InvalidPathError as e:
         logger.warning(f"Invalid path: {e.message}")
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Invalid path", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except DocsCopilotError as e:
@@ -241,7 +281,7 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "DocsCopilot error", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except Exception as e:
@@ -249,7 +289,14 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Unexpected error", "message": "{str(e)}"}}',
+                text=json.dumps(
+                    {
+                        "error": "UnexpectedError",
+                        "message": str(e),
+                        "error_code": ErrorCode.UNKNOWN_ERROR.value,
+                    },
+                    indent=2,
+                ),
             )
         ]
 

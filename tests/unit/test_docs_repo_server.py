@@ -41,7 +41,7 @@ class TestDocsRepoServer:
             assert len(result) == 1
             assert "feature.md" in result[0].text
             mock_manager.suggest_doc_location.assert_called_once_with(
-                "feature-123", None
+                "feature-123", "concept"  # Default doc_type
             )
 
         asyncio.run(run_test())

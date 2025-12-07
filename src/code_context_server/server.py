@@ -1,6 +1,7 @@
 """Code Context MCP Server implementation."""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +15,17 @@ from src.code_context_server.feature_metadata import FeatureMetadataExtractor
 from src.shared.config import CodeContextConfig
 from src.shared.errors import (
     DocsCopilotError,
+    ErrorCode,
     FeatureNotFoundError,
     FileNotFoundError,
     GitCommandError,
+    GitTimeoutError,
     RepositoryNotFoundError,
+    ValidationError,
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
+from src.shared.validation import validate_feature_id
 
 # Initialize logger
 logger = setup_logging()
@@ -115,10 +120,15 @@ async def call_tool(
             repo_path = arguments.get("repo_path")
 
             if not feature_id:
-                raise ValueError("feature_id is required")
+                raise ValidationError("feature_id is required")
+
+            # Validate feature ID
+            validated_feature_id = validate_feature_id(feature_id)
 
             repo_path_obj = Path(repo_path) if repo_path else None
-            metadata = feature_extractor.get_feature_metadata(feature_id, repo_path_obj)
+            metadata = feature_extractor.get_feature_metadata(
+                validated_feature_id, repo_path_obj
+            )
 
             return [
                 TextContent(
@@ -131,7 +141,12 @@ async def call_tool(
             path = arguments.get("path")
 
             if not path:
-                raise ValueError("path is required")
+                raise ValidationError("path is required")
+
+            if not isinstance(path, str):
+                raise ValidationError(
+                    f"path must be a string, got {type(path).__name__}"
+                )
 
             examples = code_examples_extractor.get_code_examples(
                 path, config.workspace_root
@@ -167,12 +182,20 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except ValidationError as e:
+        logger.warning(f"Validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(e.to_dict(), indent=2),
+            )
+        ]
     except FeatureNotFoundError as e:
         logger.warning(f"Feature not found: {e.message}")
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Feature not found", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except FileNotFoundError as e:
@@ -180,7 +203,15 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "File not found", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
+            )
+        ]
+    except GitTimeoutError as e:
+        logger.error(f"Git timeout: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except (GitCommandError, RepositoryNotFoundError) as e:
@@ -188,7 +219,7 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Git error", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except DocsCopilotError as e:
@@ -196,7 +227,7 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "DocsCopilot error", "message": "{e.message}"}}',
+                text=json.dumps(e.to_dict(), indent=2),
             )
         ]
     except Exception as e:
@@ -204,7 +235,14 @@ async def call_tool(
         return [
             TextContent(
                 type="text",
-                text=f'{{"error": "Unexpected error", "message": "{str(e)}"}}',
+                text=json.dumps(
+                    {
+                        "error": "UnexpectedError",
+                        "message": str(e),
+                        "error_code": ErrorCode.UNKNOWN_ERROR.value,
+                    },
+                    indent=2,
+                ),
             )
         ]
 
