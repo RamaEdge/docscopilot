@@ -1,0 +1,30 @@
+# DocsCopilot Configuration File Example (TOML)
+# Copy this file to docscopilot.toml and customize for your environment
+# Environment variables override values in this file
+
+# Server Configuration
+[server]
+workspace_root = "/workspace"
+log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+host = "0.0.0.0"
+port = 8000
+
+# Code Context Server Configuration
+[code_context]
+git_binary = "git"
+supported_languages = ["python"]
+# Add more languages as needed: "javascript", "go", "rust", etc.
+
+# Templates + Style Server Configuration
+[templates_style]
+# Optional: Path to external templates repository
+# If not set, uses workspace .docscopilot/ or built-in defaults
+templates_path = null
+
+# Docs Repo Server Configuration
+[docs_repo]
+# Note: Tokens should be set via environment variables for security
+# GITHUB_TOKEN and GITLAB_TOKEN environment variables override these
+# github_token = null  # Set via GITHUB_TOKEN env var instead
+# gitlab_token = null  # Set via GITLAB_TOKEN env var instead
+
