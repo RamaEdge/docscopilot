@@ -98,6 +98,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
 ]
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src"]
