@@ -52,6 +52,7 @@ docscopilot/
 - [Architecture Document](docs/docscopilot_architecture.md) - High-level system architecture
 - [Specification Document](docs/docscopilot_spec.md) - Functional and technical specifications
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) - Detailed implementation plan with issues
+- [Linting Standards](docs/LINTING.md) - Code quality and linting standards
 
 ## Project Status
 
