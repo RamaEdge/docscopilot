@@ -6,6 +6,7 @@ from src.code_context_server.code_examples import CodeExamplesExtractor
 from src.shared.errors import FileNotFoundError
 
 
+@pytest.mark.unit
 class TestCodeExamplesExtractor:
     """Test cases for CodeExamplesExtractor class."""
 

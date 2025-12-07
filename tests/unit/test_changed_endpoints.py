@@ -2,10 +2,13 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from src.code_context_server.changed_endpoints import ChangedEndpointsExtractor
 from src.shared.git_utils import GitUtils
 
 
+@pytest.mark.unit
 class TestChangedEndpointsExtractor:
     """Test cases for ChangedEndpointsExtractor class."""
 

@@ -3,11 +3,14 @@
 import asyncio
 from unittest.mock import patch
 
+import pytest
+
 from src.shared.errors import TemplateNotFoundError
 from src.templates_style_server import server
 from src.templates_style_server.server import app
 
 
+@pytest.mark.unit
 class TestTemplatesStyleServer:
     """Test cases for Templates + Style MCP Server."""
 

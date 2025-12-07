@@ -6,6 +6,7 @@ from src.shared.code_parser import CodeParser
 from src.shared.errors import FileNotFoundError
 
 
+@pytest.mark.unit
 class TestCodeParser:
     """Test cases for CodeParser class."""
 

@@ -14,6 +14,7 @@ from src.shared.config import (
 )
 
 
+@pytest.mark.unit
 class TestServerConfig:
     """Test cases for ServerConfig class."""
 
@@ -93,6 +94,7 @@ class TestServerConfig:
             assert config.host == "0.0.0.0"  # Default used
 
 
+@pytest.mark.unit
 class TestCodeContextConfig:
     """Test cases for CodeContextConfig class."""
 
@@ -163,6 +165,7 @@ class TestCodeContextConfig:
             assert config.git_binary == "/custom/git"  # Env overrides file
 
 
+@pytest.mark.unit
 class TestTemplatesStyleConfig:
     """Test cases for TemplatesStyleConfig class."""
 
@@ -209,6 +212,7 @@ class TestTemplatesStyleConfig:
             assert config.templates_path == templates_path  # Env overrides file
 
 
+@pytest.mark.unit
 class TestDocsRepoConfig:
     """Test cases for DocsRepoConfig class."""
 

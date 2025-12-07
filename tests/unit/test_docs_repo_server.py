@@ -3,10 +3,13 @@
 import asyncio
 from unittest.mock import patch
 
+import pytest
+
 from src.docs_repo_server import server
 from src.shared.errors import InvalidPathError
 
 
+@pytest.mark.unit
 class TestDocsRepoServer:
     """Test cases for Docs Repo MCP Server."""
 
