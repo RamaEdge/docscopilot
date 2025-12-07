@@ -1,0 +1,34 @@
+heading_structure:
+  levels:
+    - h1: "Main title - use for document title only"
+    - h2: "Major sections"
+    - h3: "Subsections"
+    - h4: "Minor subsections (use sparingly)"
+  capitalization: "Title Case"
+  numbering: false
+
+tone:
+  style: "professional"
+  voice: "active"
+  person: "second"
+  formality: "moderate"
+  guidelines:
+    - "Use clear, concise language"
+    - "Avoid jargon unless necessary"
+    - "Explain technical terms on first use"
+    - "Use active voice when possible"
+
+formatting:
+  code_blocks:
+    language_required: true
+    syntax_highlighting: true
+  lists:
+    bullet_style: "-"
+    ordered_style: "numbered"
+  links:
+    format: "markdown"
+    require_descriptive_text: true
+  tables:
+    alignment: "left"
+    header_required: true
+

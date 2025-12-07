@@ -1,0 +1,23 @@
+# {{ title }}
+
+## Overview
+
+{{ overview }}
+
+## Key Concepts
+
+{% for concept in concepts %}
+### {{ concept.name }}
+
+{{ concept.description }}
+
+{% endfor %}
+
+## Related Topics
+
+{% if related_topics %}
+{% for topic in related_topics %}
+- [{{ topic.title }}]({{ topic.link }})
+{% endfor %}
+{% endif %}
+

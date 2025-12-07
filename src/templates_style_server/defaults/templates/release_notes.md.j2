@@ -1,0 +1,46 @@
+# Release Notes - {{ version }}
+
+**Release Date:** {{ release_date }}
+
+## Summary
+
+{{ summary }}
+
+## New Features
+
+{% if new_features %}
+{% for feature in new_features %}
+- **{{ feature.title }}:** {{ feature.description }}
+{% endfor %}
+{% endif %}
+
+## Improvements
+
+{% if improvements %}
+{% for improvement in improvements %}
+- {{ improvement }}
+{% endfor %}
+{% endif %}
+
+## Bug Fixes
+
+{% if bug_fixes %}
+{% for fix in bug_fixes %}
+- {{ fix }}
+{% endfor %}
+{% endif %}
+
+## Breaking Changes
+
+{% if breaking_changes %}
+{% for change in breaking_changes %}
+- **{{ change.component }}:** {{ change.description }}
+{% endfor %}
+{% endif %}
+
+## Migration Guide
+
+{% if migration_guide %}
+{{ migration_guide }}
+{% endif %}
+

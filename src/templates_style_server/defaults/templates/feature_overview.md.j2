@@ -1,0 +1,47 @@
+# {{ title }}
+
+## Overview
+
+{{ overview }}
+
+## Features
+
+{% for feature in features %}
+### {{ feature.name }}
+
+{{ feature.description }}
+
+{% if feature.examples %}
+**Example:**
+```{{ feature.language | default('python') }}
+{{ feature.examples }}
+```
+
+{% endif %}
+{% endfor %}
+
+## Use Cases
+
+{% if use_cases %}
+{% for use_case in use_cases %}
+### {{ use_case.title }}
+
+{{ use_case.description }}
+
+{% endfor %}
+{% endif %}
+
+## Getting Started
+
+{% if getting_started %}
+{{ getting_started }}
+{% endif %}
+
+## Additional Resources
+
+{% if additional_resources %}
+{% for resource in additional_resources %}
+- [{{ resource.title }}]({{ resource.url }})
+{% endfor %}
+{% endif %}
+

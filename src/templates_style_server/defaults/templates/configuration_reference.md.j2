@@ -1,0 +1,48 @@
+# {{ title }}
+
+## Overview
+
+{{ overview }}
+
+## Configuration Options
+
+{% for option in options %}
+### {{ option.name }}
+
+- **Type:** {{ option.type }}
+- **Default:** {{ option.default | default('None') }}
+- **Required:** {{ option.required | default(false) }}
+- **Description:** {{ option.description }}
+
+{% if option.example %}
+**Example:**
+```yaml
+{{ option.example }}
+```
+
+{% endif %}
+{% endfor %}
+
+## Environment Variables
+
+{% if env_vars %}
+{% for var in env_vars %}
+- **{{ var.name }}:** {{ var.description }}
+  - Default: `{{ var.default | default('Not set') }}`
+
+{% endfor %}
+{% endif %}
+
+## Configuration Files
+
+{% if config_files %}
+{% for file in config_files %}
+### {{ file.name }}
+
+**Location:** `{{ file.location }}`
+
+{{ file.description }}
+
+{% endfor %}
+{% endif %}
+

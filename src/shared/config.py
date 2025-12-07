@@ -83,10 +83,9 @@ class TemplatesStyleConfig(ServerConfig):
         base_config = super().from_env()
         templates_path = os.getenv("DOCSCOPILOT_TEMPLATES_PATH")
 
-        return cls(
-            **base_config.model_dump(),
-            templates_path=Path(templates_path) if templates_path else None,
-        )
+        config_dict = base_config.model_dump()
+        config_dict["templates_path"] = Path(templates_path) if templates_path else None
+        return cls(**config_dict)
 
 
 class DocsRepoConfig(ServerConfig):

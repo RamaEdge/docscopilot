@@ -1,0 +1,51 @@
+# {{ title }}
+
+## Endpoint
+
+```
+{{ method }} {{ path }}
+```
+
+## Description
+
+{{ description }}
+
+## Parameters
+
+{% if parameters %}
+{% for param in parameters %}
+### {{ param.name }}
+
+- **Type:** {{ param.type }}
+- **Required:** {{ param.required | default(false) }}
+- **Description:** {{ param.description }}
+
+{% endfor %}
+{% endif %}
+
+## Request Example
+
+{% if request_example %}
+```json
+{{ request_example | tojson(indent=2) }}
+```
+
+{% endif %}
+
+## Response Example
+
+{% if response_example %}
+```json
+{{ response_example | tojson(indent=2) }}
+```
+
+{% endif %}
+
+## Error Codes
+
+{% if error_codes %}
+{% for error in error_codes %}
+- **{{ error.code }}:** {{ error.message }}
+{% endfor %}
+{% endif %}
+

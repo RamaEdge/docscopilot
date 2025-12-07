@@ -1,0 +1,42 @@
+# {{ title }}
+
+## Prerequisites
+
+{% if prerequisites %}
+{% for prereq in prerequisites %}
+- {{ prereq }}
+{% endfor %}
+{% endif %}
+
+## Steps
+
+{% for step in steps %}
+### Step {{ loop.index }}: {{ step.title }}
+
+{{ step.description }}
+
+{% if step.code %}
+```{{ step.language | default('bash') }}
+{{ step.code }}
+```
+
+{% endif %}
+{% endfor %}
+
+## Verification
+
+{% if verification %}
+{{ verification }}
+{% endif %}
+
+## Troubleshooting
+
+{% if troubleshooting %}
+{% for issue in troubleshooting %}
+### {{ issue.problem }}
+
+**Solution:** {{ issue.solution }}
+
+{% endfor %}
+{% endif %}
+
