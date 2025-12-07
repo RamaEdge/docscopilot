@@ -103,8 +103,7 @@ class DocsRepoConfig(ServerConfig):
         """Create configuration from environment variables."""
         base_config = super().from_env()
 
-        return cls(
-            **base_config.model_dump(),
-            github_token=os.getenv("GITHUB_TOKEN"),
-            gitlab_token=os.getenv("GITLAB_TOKEN"),
-        )
+        config_dict = base_config.model_dump()
+        config_dict["github_token"] = os.getenv("GITHUB_TOKEN")
+        config_dict["gitlab_token"] = os.getenv("GITLAB_TOKEN")
+        return cls(**config_dict)

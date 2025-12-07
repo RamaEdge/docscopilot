@@ -1,8 +1,5 @@
 """Unit tests for template_loader module."""
 
-from pathlib import Path
-from unittest.mock import patch
-
 import pytest
 import yaml
 
@@ -172,4 +169,3 @@ class TestTemplateLoader:
         data, source = loader.get_glossary()
         assert source == "workspace"
         assert "CustomTerm" in data.get("terms", {})
-

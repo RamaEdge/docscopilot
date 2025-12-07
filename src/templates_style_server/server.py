@@ -5,7 +5,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from src.shared.config import TemplatesStyleConfig
 from src.shared.errors import DocsCopilotError, TemplateNotFoundError
@@ -93,9 +93,7 @@ async def call_tool(
             content = template_loader.get_template(doc_type)
             source = template_loader.get_template_source(doc_type)
 
-            template = Template(
-                doc_type=doc_type, content=content, source=source
-            )
+            template = Template(doc_type=doc_type, content=content, source=source)
 
             return [
                 TextContent(
@@ -182,4 +180,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
