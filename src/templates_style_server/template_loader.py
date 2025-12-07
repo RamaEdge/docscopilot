@@ -1,11 +1,10 @@
 """Template loader with layered lookup support."""
 
-import os
 from pathlib import Path
 from typing import Any
 
 import yaml
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+from jinja2 import Environment, FileSystemLoader
 
 from src.shared.config import TemplatesStyleConfig
 from src.shared.errors import TemplateNotFoundError
@@ -151,7 +150,10 @@ class TemplateLoader:
             if template_path.exists():
                 if i == 0:
                     return "configured"
-                elif i == 1 and self.workspace_root / ".docscopilot" in lookup_path.parents:
+                elif (
+                    i == 1
+                    and self.workspace_root / ".docscopilot" in lookup_path.parents
+                ):
                     return "workspace"
                 else:
                     return "default"
@@ -174,17 +176,20 @@ class TemplateLoader:
             file_path = lookup_path / subdir / filename
             if file_path.exists():
                 try:
-                    with open(file_path, "r", encoding="utf-8") as f:
+                    with open(file_path, encoding="utf-8") as f:
                         data = yaml.safe_load(f) or {}
-                    
+
                     # Determine source based on lookup path
-                    if self.config.templates_path and Path(self.config.templates_path) == lookup_path:
+                    if (
+                        self.config.templates_path
+                        and Path(self.config.templates_path) == lookup_path
+                    ):
                         source = "configured"
                     elif lookup_path == workspace_docscopilot:
                         source = "workspace"
                     else:
                         source = "default"
-                    
+
                     return data, source
                 except Exception as e:
                     logger.warning(f"Error loading YAML file {file_path}: {e}")
@@ -219,4 +224,3 @@ class TemplateLoader:
         """
         data, source = self._load_yaml_file("default.yaml", "glossaries")
         return data, source
-
