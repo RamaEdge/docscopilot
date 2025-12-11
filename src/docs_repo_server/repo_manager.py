@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.exceptions import RequestException, Timeout
 from urllib3.util.retry import Retry
 
 from src.shared.config import DocsRepoConfig
@@ -15,9 +16,13 @@ from src.shared.errors import (
     APIError,
     ErrorCode,
     GitCommandError,
+    InvalidPathError,
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
+from src.shared.retry import retry_with_backoff
+from src.shared.security import SecurityValidator
+from src.shared.validation import validate_branch_name
 
 logger = setup_logging()
 
@@ -37,7 +42,7 @@ class RepoManager:
             config.workspace_root, timeout=config.git_command_timeout
         )
 
-        # Create secure HTTP session with certificate verification
+        # Create secure HTTP session with certificate verification and connection pooling
         self.session = requests.Session()
         retry_config = config.api_retry
         retry_strategy = Retry(
@@ -45,7 +50,12 @@ class RepoManager:
             backoff_factor=retry_config.backoff_factor,
             status_forcelist=retry_config.status_forcelist,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
+        # Enhanced connection pooling: pool_connections=10, pool_maxsize=20
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy,
+            pool_connections=10,  # Number of connection pools to cache
+            pool_maxsize=20,  # Maximum number of connections to save in the pool
+        )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 

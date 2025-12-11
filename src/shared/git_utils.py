@@ -1,5 +1,6 @@
 """Git utilities for MCP servers."""
 
+import functools
 import subprocess
 from pathlib import Path
 
@@ -104,6 +105,7 @@ class GitUtils:
         )
         return [line for line in output.split("\n") if line.strip()]
 
+    @functools.lru_cache(maxsize=256)  # noqa: B019
     def get_commit_info(self, repo_path: Path, commit_hash: str) -> dict[str, str]:
         """Get commit information.
 
@@ -133,6 +135,7 @@ class GitUtils:
             "body": parts[2] if len(parts) > 2 else "",
         }
 
+    @functools.lru_cache(maxsize=128)  # noqa: B019
     def get_branches_containing(self, repo_path: Path, commit_hash: str) -> list[str]:
         """Get branches containing a commit.
 
@@ -157,6 +160,7 @@ class GitUtils:
             if line.strip()
         ]
 
+    @functools.lru_cache(maxsize=128)  # noqa: B019
     def get_tags_containing(self, repo_path: Path, commit_hash: str) -> list[str]:
         """Get tags containing a commit.
 
@@ -229,6 +233,7 @@ class GitUtils:
                 files.add(line)
         return sorted(files)
 
+    @functools.lru_cache(maxsize=64)  # noqa: B019
     def ls_files(self, repo_path: Path, pattern: str = "*.py") -> list[str]:
         """List files matching pattern in repository.
 
@@ -241,6 +246,13 @@ class GitUtils:
         """
         output = self._run_git_command(repo_path, "ls-files", pattern)
         return [line.strip() for line in output.split("\n") if line.strip()]
+
+    def clear_cache(self) -> None:
+        """Clear all caches. Useful for testing or when repository state changes."""
+        self.get_branches_containing.cache_clear()
+        self.get_tags_containing.cache_clear()
+        self.get_commit_info.cache_clear()
+        self.ls_files.cache_clear()
 
     def get_diff(self, repo_path: Path, base: str, head: str) -> str:
         """Get diff between two commits/branches.

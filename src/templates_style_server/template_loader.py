@@ -1,5 +1,6 @@
 """Template loader with layered lookup support."""
 
+import functools
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,9 @@ class TemplateLoader:
 
         # Initialize Jinja2 environment for template loading
         self.jinja_env = self._create_jinja_env()
+
+        # Cache for template file modification times (for cache invalidation)
+        self._file_mtimes: dict[str, float] = {}
 
     def _build_lookup_paths(self) -> list[Path]:
         """Build list of lookup paths in priority order.
@@ -86,6 +90,7 @@ class TemplateLoader:
             lstrip_blocks=True,
         )
 
+    @functools.lru_cache(maxsize=32)  # noqa: B019
     def get_template(self, doc_type: str) -> str:
         """Get template for a document type.
 
@@ -160,6 +165,7 @@ class TemplateLoader:
 
         return "default"
 
+    @functools.lru_cache(maxsize=64)  # noqa: B019
     def _load_yaml_file(self, filename: str, subdir: str) -> tuple[dict[str, Any], str]:
         """Load YAML file from lookup paths.
 
@@ -224,3 +230,9 @@ class TemplateLoader:
         """
         data, source = self._load_yaml_file("default.yaml", "glossaries")
         return data, source
+
+    def clear_cache(self) -> None:
+        """Clear all caches. Useful for testing or when files change."""
+        self.get_template.cache_clear()
+        self._load_yaml_file.cache_clear()
+        self._file_mtimes.clear()

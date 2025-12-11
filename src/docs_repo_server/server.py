@@ -18,6 +18,7 @@ from src.shared.errors import (
     ValidationError,
 )
 from src.shared.logging import setup_logging
+from src.shared.performance import track_performance
 from src.shared.validation import (
     validate_branch_name,
     validate_doc_type,
@@ -121,6 +122,7 @@ async def list_tools() -> list[Tool]:
 
 
 @app.call_tool()  # type: ignore[untyped-decorator]
+@track_performance("docs_repo_call_tool")
 async def call_tool(
     name: str, arguments: dict[str, Any] | None = None
 ) -> list[TextContent]:

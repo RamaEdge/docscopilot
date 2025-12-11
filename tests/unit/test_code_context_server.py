@@ -110,19 +110,19 @@ class TestCodeContextServer:
 
     @patch("src.code_context_server.server.feature_extractor")
     def test_call_tool_security_error(self, mock_extractor, tmp_path):
-        """Test call_tool with SecurityError."""
+        """Test call_tool with ValidationError for invalid feature_id."""
         # Mock config.workspace_root
         with patch("src.code_context_server.server.config") as mock_config:
             mock_config.workspace_root = tmp_path
 
             async def run_test():
-                # Test with invalid feature_id that triggers SecurityError
+                # Test with invalid feature_id that triggers ValidationError
                 result = await server.call_tool(
                     "get_feature_metadata", {"feature_id": "feature;rm -rf /"}
                 )
                 assert len(result) == 1
                 assert "error" in result[0].text.lower()
-                assert "security" in result[0].text.lower()
+                assert "validation" in result[0].text.lower()
 
             asyncio.run(run_test())
 
