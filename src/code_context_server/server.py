@@ -1,6 +1,7 @@
 """Code Context MCP Server implementation."""
 
 import asyncio
+import json
 from typing import Any
 
 from mcp.server import Server
@@ -23,7 +24,9 @@ from src.shared.errors import (
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
+from src.shared.performance import track_performance
 from src.shared.security import SecurityError, SecurityValidator
+from src.shared.validation import validate_feature_id
 
 # Initialize logger
 logger = setup_logging()
@@ -108,6 +111,7 @@ async def list_tools() -> list[Tool]:
 
 
 @app.call_tool()  # type: ignore[untyped-decorator]
+@track_performance("code_context_call_tool")
 async def call_tool(
     name: str, arguments: dict[str, Any] | None = None
 ) -> list[TextContent]:
@@ -123,7 +127,7 @@ async def call_tool(
                 raise ValidationError("feature_id is required")
 
             # Validate feature ID
-            validated_feature_id = validate_feature_id(feature_id)
+            feature_id = validate_feature_id(feature_id)
 
             # Validate feature_id for security
             feature_id = SecurityValidator.validate_feature_id(feature_id)

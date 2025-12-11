@@ -231,7 +231,7 @@ class TestDocsRepoServer:
 
     @patch("src.docs_repo_server.server.repo_manager")
     def test_call_tool_security_error(self, mock_manager, tmp_path):
-        """Test call_tool with SecurityError."""
+        """Test call_tool with ValidationError for invalid feature_id."""
         mock_manager.workspace_root = tmp_path
 
         async def run_test():
@@ -241,7 +241,7 @@ class TestDocsRepoServer:
             )
             assert len(result) == 1
             assert "error" in result[0].text.lower()
-            assert "security" in result[0].text.lower()
+            assert "validation" in result[0].text.lower()
 
         asyncio.run(run_test())
 

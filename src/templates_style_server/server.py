@@ -12,12 +12,12 @@ from src.shared.config import TemplatesStyleConfig
 from src.shared.errors import (
     DocsCopilotError,
     ErrorCode,
-    SecurityError,
     TemplateNotFoundError,
     ValidationError,
 )
 from src.shared.logging import setup_logging
-from src.shared.security import SecurityValidator
+from src.shared.performance import track_performance
+from src.shared.security import SecurityError, SecurityValidator
 from src.shared.validation import validate_doc_type
 from src.templates_style_server.models import Glossary, StyleGuide, Template
 from src.templates_style_server.template_loader import TemplateLoader
@@ -86,6 +86,7 @@ async def list_tools() -> list[Tool]:
 
 
 @app.call_tool()  # type: ignore[untyped-decorator]
+@track_performance("templates_style_call_tool")
 async def call_tool(
     name: str, arguments: dict[str, Any] | None = None
 ) -> list[TextContent]:
