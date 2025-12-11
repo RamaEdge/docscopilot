@@ -1,7 +1,6 @@
 """Code Context MCP Server implementation."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
@@ -21,6 +20,7 @@ from src.shared.errors import (
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
+from src.shared.security import SecurityError, SecurityValidator
 
 # Initialize logger
 logger = setup_logging()
@@ -32,7 +32,9 @@ app = Server("code-context-server")
 config = CodeContextConfig.from_env()
 
 # Initialize utilities
-git_utils = GitUtils(config.workspace_root, config.git_binary)
+git_utils = GitUtils(
+    config.workspace_root, config.git_binary, config.git_command_timeout
+)
 feature_extractor = FeatureMetadataExtractor(git_utils, config.workspace_root)
 code_examples_extractor = CodeExamplesExtractor(config.supported_languages)
 endpoints_extractor = ChangedEndpointsExtractor(git_utils, config.workspace_root)
@@ -117,7 +119,16 @@ async def call_tool(
             if not feature_id:
                 raise ValueError("feature_id is required")
 
-            repo_path_obj = Path(repo_path) if repo_path else None
+            # Validate feature_id for security
+            feature_id = SecurityValidator.validate_feature_id(feature_id)
+
+            # Validate repo_path if provided
+            repo_path_obj = None
+            if repo_path:
+                repo_path_obj = SecurityValidator.validate_path(
+                    repo_path, config.workspace_root
+                )
+
             metadata = feature_extractor.get_feature_metadata(feature_id, repo_path_obj)
 
             return [
@@ -133,8 +144,13 @@ async def call_tool(
             if not path:
                 raise ValueError("path is required")
 
-            examples = code_examples_extractor.get_code_examples(
+            # Validate path for security
+            validated_path = SecurityValidator.validate_path(
                 path, config.workspace_root
+            )
+            examples = code_examples_extractor.get_code_examples(
+                str(validated_path.relative_to(config.workspace_root)),
+                config.workspace_root,
             )
 
             return [
@@ -150,11 +166,27 @@ async def call_tool(
             base = arguments.get("base")
             head = arguments.get("head")
 
+            # Validate repo_path if provided
+            repo_path_obj = None
+            if repo_path:
+                repo_path_obj = SecurityValidator.validate_path(
+                    repo_path, config.workspace_root
+                )
+
+            # Validate commit hashes if provided
+            validated_base = None
+            if base:
+                validated_base = SecurityValidator.sanitize_commit_hash(base)
+
+            validated_head = None
+            if head:
+                validated_head = SecurityValidator.sanitize_commit_hash(head)
+
             endpoints = endpoints_extractor.get_changed_endpoints(
                 diff,
-                Path(repo_path) if repo_path else None,
-                base if base else None,
-                head if head else None,
+                repo_path_obj,
+                validated_base,
+                validated_head,
             )
 
             return [
@@ -189,6 +221,14 @@ async def call_tool(
             TextContent(
                 type="text",
                 text=f'{{"error": "Git error", "message": "{e.message}"}}',
+            )
+        ]
+    except SecurityError as e:
+        logger.warning(f"Security validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=f'{{"error": "Security validation error", "message": "{e.message}"}}',
             )
         ]
     except DocsCopilotError as e:

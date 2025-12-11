@@ -193,3 +193,4 @@ with patch("src.docs_repo_server.server.repo_manager") as mock:
 3. **Clean Up**: Use fixtures that automatically clean up (like `temp_workspace`) rather than manual cleanup
 4. **Test End-to-End**: Integration tests should verify complete workflows, not just individual functions
 5. **Isolate Tests**: Each test should be independent and not rely on state from other tests
+

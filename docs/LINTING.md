@@ -179,3 +179,4 @@ This will automatically format all Python files according to Black's rules.
 - [Ruff Documentation](https://docs.astral.sh/ruff/)
 - [MyPy Documentation](https://mypy.readthedocs.io/)
 - [Pre-commit Documentation](https://pre-commit.com/)
+

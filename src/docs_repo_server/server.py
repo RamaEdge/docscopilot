@@ -12,6 +12,7 @@ from src.docs_repo_server.repo_manager import RepoManager
 from src.shared.config import DocsRepoConfig
 from src.shared.errors import DocsCopilotError, InvalidPathError
 from src.shared.logging import setup_logging
+from src.shared.security import SecurityError, SecurityValidator
 
 # Initialize logger
 logger = setup_logging()
@@ -82,7 +83,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "branch": {
                         "type": "string",
-                        "description": "Branch name",
+                        "description": "Optional branch name (auto-generated from title/feature_id if not provided)",
                     },
                     "title": {
                         "type": "string",
@@ -92,13 +93,17 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "PR description",
                     },
+                    "feature_id": {
+                        "type": "string",
+                        "description": "Optional feature ID for better branch naming",
+                    },
                     "files": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional list of files to commit",
                     },
                 },
-                "required": ["branch", "title", "description"],
+                "required": ["title", "description"],
             },
         ),
     ]
@@ -119,8 +124,16 @@ async def call_tool(
             if not feature_id:
                 raise ValueError("feature_id is required")
 
+            # Validate feature_id for security
+            feature_id = SecurityValidator.validate_feature_id(feature_id)
+
+            # Validate doc_type if provided
+            validated_doc_type = None
+            if doc_type:
+                validated_doc_type = SecurityValidator.validate_doc_type(doc_type)
+
             path, final_doc_type = repo_manager.suggest_doc_location(
-                feature_id, doc_type
+                feature_id, validated_doc_type
             )
 
             location = DocLocation(
@@ -145,8 +158,13 @@ async def call_tool(
             if not doc_content:
                 raise ValueError("content is required")
 
+            # Validate path for security
+            validated_path = SecurityValidator.validate_path(
+                doc_path, repo_manager.workspace_root
+            )
             actual_path, success, message = repo_manager.write_doc(
-                doc_path, doc_content
+                str(validated_path.relative_to(repo_manager.workspace_root)),
+                doc_content,
             )
 
             result = WriteResult(path=actual_path, success=success, message=message)
@@ -162,14 +180,39 @@ async def call_tool(
             branch = arguments.get("branch")
             title = arguments.get("title")
             description = arguments.get("description")
+            feature_id = arguments.get("feature_id")
             files = arguments.get("files")
 
-            if not branch:
-                raise ValueError("branch is required")
             if not title:
                 raise ValueError("title is required")
             if not description:
                 raise ValueError("description is required")
+
+            # Auto-generate branch if not provided
+            if not branch:
+                # Validate feature_id if provided
+                if feature_id:
+                    feature_id = SecurityValidator.validate_feature_id(feature_id)
+                branch = repo_manager.generate_branch_name(
+                    title=title,
+                    feature_id=feature_id,
+                )
+                logger.info(f"Auto-generated branch name: {branch}")
+            else:
+                # Validate user-provided branch name for security
+                branch = SecurityValidator.validate_branch_name(branch)
+
+            # Validate file paths if provided
+            validated_files = None
+            if files:
+                validated_files = []
+                for file_path in files:
+                    validated_path = SecurityValidator.validate_path(
+                        file_path, repo_manager.workspace_root
+                    )
+                    validated_files.append(
+                        str(validated_path.relative_to(repo_manager.workspace_root))
+                    )
 
             # Create branch
             if not repo_manager.create_branch(branch):
@@ -182,7 +225,7 @@ async def call_tool(
 
             # Commit changes
             commit_message = f"{title}\n\n{description}"
-            if not repo_manager.commit_changes(commit_message, files):
+            if not repo_manager.commit_changes(commit_message, validated_files):
                 return [
                     TextContent(
                         type="text",
@@ -228,6 +271,14 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except SecurityError as e:
+        logger.warning(f"Security validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=f'{{"error": "Security validation error", "message": "{e.message}"}}',
+            )
+        ]
     except InvalidPathError as e:
         logger.warning(f"Invalid path: {e.message}")
         return [

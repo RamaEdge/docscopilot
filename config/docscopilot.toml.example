@@ -28,3 +28,35 @@ templates_path = null
 # github_token = null  # Set via GITHUB_TOKEN env var instead
 # gitlab_token = null  # Set via GITLAB_TOKEN env var instead
 
+# API Configuration (supports self-hosted instances)
+# github_api_base_url = "https://api.github.com"  # GitHub Enterprise: "https://github.example.com/api/v3"
+# gitlab_api_base_url = "https://gitlab.com/api/v4"  # Self-hosted: "https://gitlab.example.com/api/v4"
+# github_host = "github.com"  # GitHub Enterprise: "github.example.com"
+# gitlab_host = "gitlab.com"  # Self-hosted: "gitlab.example.com"
+
+# Timeouts (inherited from server config, can override)
+# git_command_timeout = 30  # Timeout for git commands in seconds
+# api_request_timeout = 30  # Timeout for API requests in seconds
+
+# Retry Configuration
+# [docs_repo.api_retry]
+# total = 3  # Total number of retry attempts
+# backoff_factor = 1  # Backoff factor for exponential backoff
+# status_forcelist = [429, 500, 502, 503, 504]  # HTTP status codes that trigger retry
+
+# Paths and Defaults
+# docs_directory = "docs"  # Directory name for documentation files
+# default_doc_type = "concept"  # Default document type when not specified
+# default_base_branch = "main"  # Default base branch for pull requests
+# repo_mode = "same"  # Repository mode: "same" or "external"
+
+# Document Type Directory Mapping
+# [docs_repo.doc_type_directories]
+# concept = "concepts"
+# task = "tasks"
+# api_reference = "api"
+# release_notes = "releases"
+# feature_overview = "features"
+# configuration_reference = "configuration"
+
+

@@ -67,7 +67,7 @@ class TestGitUtils:
     def test_log_grep(self, mock_run, tmp_path):
         """Test log_grep method."""
         mock_result = MagicMock()
-        mock_result.stdout = "abc123\ndef456\n"
+        mock_result.stdout = "abc1234\ndef4567\n"
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
@@ -75,21 +75,22 @@ class TestGitUtils:
         (tmp_path / ".git").mkdir()
 
         result = git_utils.log_grep(tmp_path, "feature-123")
-        assert result == ["abc123", "def456"]
+        assert result == ["abc1234", "def4567"]
 
     @patch("subprocess.run")
     def test_get_commit_info(self, mock_run, tmp_path):
         """Test get_commit_info method."""
         mock_result = MagicMock()
-        mock_result.stdout = "abc123|Subject|Body"
+        mock_result.stdout = "abc1234|Subject|Body"
         mock_result.returncode = 0
         mock_run.return_value = mock_result
 
         git_utils = GitUtils(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        result = git_utils.get_commit_info(tmp_path, "abc123")
-        assert result["hash"] == "abc123"
+        commit_hash = "abc1234"
+        result = git_utils.get_commit_info(tmp_path, commit_hash)
+        assert result["hash"] == "abc1234"
         assert result["subject"] == "Subject"
         assert result["body"] == "Body"
 
@@ -104,7 +105,8 @@ class TestGitUtils:
         git_utils = GitUtils(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        result = git_utils.get_branches_containing(tmp_path, "abc123")
+        commit_hash = "abc1234"
+        result = git_utils.get_branches_containing(tmp_path, commit_hash)
         assert "main" in result
         assert "feature" in result
         assert "origin/main" in result
@@ -120,7 +122,8 @@ class TestGitUtils:
         git_utils = GitUtils(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        result = git_utils.get_tags_containing(tmp_path, "abc123")
+        commit_hash = "abc1234"
+        result = git_utils.get_tags_containing(tmp_path, commit_hash)
         assert result == ["v1.0.0", "v1.1.0"]
 
     @patch("subprocess.run")
@@ -134,7 +137,10 @@ class TestGitUtils:
         git_utils = GitUtils(tmp_path)
         (tmp_path / ".git").mkdir()
 
-        result = git_utils.diff_files(tmp_path, "main", "feature")
+        # Use valid commit hashes
+        base = "a" * 7
+        head = "b" * 7
+        result = git_utils.diff_files(tmp_path, base, head)
         assert result == ["file1.py", "file2.py"]
 
     @patch("subprocess.run")

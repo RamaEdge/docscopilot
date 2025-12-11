@@ -6,7 +6,7 @@ import pytest
 
 from src.docs_repo_server.repo_manager import RepoManager
 from src.shared.config import DocsRepoConfig
-from src.shared.errors import GitCommandError, InvalidPathError
+from src.shared.errors import GitCommandError
 
 
 @pytest.mark.unit
@@ -78,7 +78,10 @@ class TestRepoManager:
         config = DocsRepoConfig(workspace_root=tmp_path)
         manager = RepoManager(config)
 
-        with pytest.raises(InvalidPathError):
+        # Security validation will raise SecurityError, not InvalidPathError
+        from src.shared.security import SecurityError
+
+        with pytest.raises(SecurityError):
             manager.write_doc("/tmp/outside.md", "content")
 
     def test_write_doc_invalid_path(self, tmp_path):
@@ -86,7 +89,10 @@ class TestRepoManager:
         config = DocsRepoConfig(workspace_root=tmp_path)
         manager = RepoManager(config)
 
-        with pytest.raises(InvalidPathError):
+        # Security validation will raise SecurityError, not InvalidPathError
+        from src.shared.security import SecurityError
+
+        with pytest.raises(SecurityError):
             manager.write_doc("../../etc/passwd", "content")
 
     @patch("src.docs_repo_server.repo_manager.GitUtils")
@@ -139,8 +145,7 @@ class TestRepoManager:
         success = manager.push_branch("feature-branch")
         assert success is True
 
-    @patch("requests.post")
-    def test_create_github_pr_success(self, mock_post, tmp_path):
+    def test_create_github_pr_success(self, tmp_path):
         """Test successful GitHub PR creation."""
         config = DocsRepoConfig(workspace_root=tmp_path, github_token="test_token")
         manager = RepoManager(config)
@@ -151,13 +156,14 @@ class TestRepoManager:
             return_value="git@github.com:owner/repo.git"
         )
 
+        # Mock the session.post method
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "html_url": "https://github.com/owner/repo/pull/123",
             "number": 123,
         }
         mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
+        manager.session.post = MagicMock(return_value=mock_response)
 
         pr_url, pr_number, success, message = manager.create_github_pr(
             "feature-branch", "Test PR", "Description"
@@ -166,6 +172,10 @@ class TestRepoManager:
         assert success is True
         assert pr_url == "https://github.com/owner/repo/pull/123"
         assert pr_number == 123
+        # Verify HTTPS and certificate verification
+        manager.session.post.assert_called_once()
+        call_kwargs = manager.session.post.call_args[1]
+        assert call_kwargs.get("verify") is True
 
     def test_create_github_pr_no_token(self, tmp_path):
         """Test GitHub PR creation without token."""
@@ -179,8 +189,7 @@ class TestRepoManager:
         assert success is False
         assert "token" in message.lower()
 
-    @patch("requests.post")
-    def test_create_gitlab_pr_success(self, mock_post, tmp_path):
+    def test_create_gitlab_pr_success(self, tmp_path):
         """Test successful GitLab MR creation."""
         config = DocsRepoConfig(workspace_root=tmp_path, gitlab_token="test_token")
         manager = RepoManager(config)
@@ -191,13 +200,14 @@ class TestRepoManager:
             return_value="git@gitlab.com:owner/repo.git"
         )
 
+        # Mock the session.post method
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "web_url": "https://gitlab.com/owner/repo/-/merge_requests/456",
             "iid": 456,
         }
         mock_response.raise_for_status = MagicMock()
-        mock_post.return_value = mock_response
+        manager.session.post = MagicMock(return_value=mock_response)
 
         mr_url, mr_number, success, message = manager.create_gitlab_pr(
             "feature-branch", "Test MR", "Description"
@@ -206,6 +216,10 @@ class TestRepoManager:
         assert success is True
         assert "gitlab.com" in mr_url
         assert mr_number == 456
+        # Verify HTTPS and certificate verification
+        manager.session.post.assert_called_once()
+        call_kwargs = manager.session.post.call_args[1]
+        assert call_kwargs.get("verify") is True
 
     def test_parse_github_repo_ssh(self, tmp_path):
         """Test parsing GitHub repo from SSH URL."""
@@ -230,3 +244,107 @@ class TestRepoManager:
 
         project_id = manager._parse_gitlab_repo("git@gitlab.com:owner/repo.git")
         assert project_id == "owner%2Frepo"
+
+    def test_generate_branch_name_from_title(self, tmp_path):
+        """Test branch name generation from title."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+        (tmp_path / ".git").mkdir()
+
+        # Mock git command to return empty branches list
+        manager.git_utils._run_git_command = MagicMock(return_value="")
+
+        branch_name = manager.generate_branch_name(
+            title="Add Documentation for Feature"
+        )
+        assert branch_name.startswith("docs/")
+        assert "add-documentation-for-feature" in branch_name.lower()
+
+    def test_generate_branch_name_from_feature_id(self, tmp_path):
+        """Test branch name generation from feature_id."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+        (tmp_path / ".git").mkdir()
+
+        # Mock git command to return empty branches list
+        manager.git_utils._run_git_command = MagicMock(return_value="")
+
+        branch_name = manager.generate_branch_name(
+            title="Add Documentation", feature_id="FEAT-123"
+        )
+        assert branch_name.startswith("docs/")
+        assert "feat-123" in branch_name.lower()
+
+    def test_generate_branch_name_sanitization(self, tmp_path):
+        """Test branch name sanitization."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+        (tmp_path / ".git").mkdir()
+
+        manager.git_utils._run_git_command = MagicMock(return_value="")
+
+        # Test with special characters
+        branch_name = manager.generate_branch_name(title="Feature: Add API Docs!")
+        assert ":" not in branch_name
+        assert "!" not in branch_name
+        assert branch_name.startswith("docs/")
+
+    def test_generate_branch_name_ensures_unique(self, tmp_path):
+        """Test branch name uniqueness checking."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+        (tmp_path / ".git").mkdir()
+
+        # Mock existing branch
+        manager.git_utils._run_git_command = MagicMock(
+            return_value="  main\n* docs/test-feature\n  remotes/origin/main"
+        )
+
+        branch_name = manager.generate_branch_name(
+            title="Test Feature", ensure_unique=True
+        )
+        # Should append number if branch exists
+        assert branch_name.startswith("docs/")
+        # Should be unique (either original or with number suffix)
+
+    def test_generate_branch_name_validates_git_rules(self, tmp_path):
+        """Test that generated branch names follow Git rules."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+        (tmp_path / ".git").mkdir()
+
+        manager.git_utils._run_git_command = MagicMock(return_value="")
+
+        # Test with title that would create invalid branch name
+        branch_name = manager.generate_branch_name(title=".lock file update")
+        assert not branch_name.endswith(".lock")
+        assert not branch_name.startswith(".")
+
+    def test_sanitize_for_branch(self, tmp_path):
+        """Test _sanitize_for_branch helper method."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+
+        # Test various inputs
+        assert manager._sanitize_for_branch("Feature Name") == "feature-name"
+        assert manager._sanitize_for_branch("FEAT_123") == "feat-123"
+        assert manager._sanitize_for_branch("Feature/Name") == "feature-name"
+        assert manager._sanitize_for_branch("Feature!!!") == "feature"
+        assert manager._sanitize_for_branch("") == ""
+
+    def test_ensure_valid_branch_name(self, tmp_path):
+        """Test _ensure_valid_branch_name helper method."""
+        config = DocsRepoConfig(workspace_root=tmp_path)
+        manager = RepoManager(config)
+
+        # Test Git rule violations
+        assert manager._ensure_valid_branch_name(".branch") == "branch"
+        assert manager._ensure_valid_branch_name("branch.") == "branch"
+        assert manager._ensure_valid_branch_name("branch.lock") == "branch"
+        # ".." gets replaced with "-"
+        assert manager._ensure_valid_branch_name("branch..name") == "branch-name"
+        # "@" and "{" get replaced with "-"
+        result = manager._ensure_valid_branch_name("branch@{name}")
+        assert result.startswith("branch")
+        assert "@" not in result
+        assert "{" not in result

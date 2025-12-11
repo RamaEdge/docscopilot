@@ -10,6 +10,7 @@ from mcp.types import TextContent, Tool
 from src.shared.config import TemplatesStyleConfig
 from src.shared.errors import DocsCopilotError, TemplateNotFoundError
 from src.shared.logging import setup_logging
+from src.shared.security import SecurityError, SecurityValidator
 from src.templates_style_server.models import Glossary, StyleGuide, Template
 from src.templates_style_server.template_loader import TemplateLoader
 
@@ -90,6 +91,9 @@ async def call_tool(
             if not doc_type:
                 raise ValueError("doc_type is required")
 
+            # Validate doc_type for security
+            doc_type = SecurityValidator.validate_doc_type(doc_type)
+
             content = template_loader.get_template(doc_type)
             source = template_loader.get_template_source(doc_type)
 
@@ -104,6 +108,9 @@ async def call_tool(
 
         elif name == "get_style_guide":
             product = arguments.get("product")
+
+            # Validate product name for security
+            product = SecurityValidator.validate_product_name(product)
 
             data, source = template_loader.get_style_guide(product)
 
@@ -138,6 +145,14 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except SecurityError as e:
+        logger.warning(f"Security validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=f'{{"error": "Security validation error", "message": "{e.message}"}}',
+            )
+        ]
     except TemplateNotFoundError as e:
         logger.warning(f"Template not found: {e.message}")
         return [

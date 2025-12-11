@@ -6,6 +6,7 @@ from pathlib import Path
 from src.code_context_server.models import CommitInfo, FeatureMetadata
 from src.shared.errors import FeatureNotFoundError, GitCommandError
 from src.shared.git_utils import GitUtils
+from src.shared.security import SecurityValidator
 
 
 class FeatureMetadataExtractor:
@@ -27,7 +28,7 @@ class FeatureMetadataExtractor:
         """Get metadata for a feature.
 
         Args:
-            feature_id: Feature identifier to search for
+            feature_id: Feature identifier to search for (must be validated)
             repo_path: Optional path to specific repository.
                       If None, searches workspace_root
 
@@ -37,6 +38,9 @@ class FeatureMetadataExtractor:
         Raises:
             FeatureNotFoundError: If feature is not found
         """
+        # Feature ID should already be validated, but ensure it's safe for git commands
+        feature_id = SecurityValidator.sanitize_git_pattern(feature_id)
+
         if repo_path is None:
             repo_path = self.workspace_root
         else:
@@ -108,7 +112,7 @@ class FeatureMetadataExtractor:
             except GitCommandError:
                 continue
 
-        # Get changed files
+        # Get changed files (feature_id already sanitized above)
         try:
             changed_files = self.git_utils.log_files(repo_path, feature_id)
             code_paths.update(changed_files)
