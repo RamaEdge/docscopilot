@@ -41,10 +41,9 @@ class TestDocsRepoServer:
             )
             assert len(result) == 1
             assert "feature.md" in result[0].text
-            mock_manager.suggest_doc_location.assert_called_once()
-            # Check that feature_id was validated
-            call_args = mock_manager.suggest_doc_location.call_args
-            assert call_args[0][0] == "feature-123"
+            mock_manager.suggest_doc_location.assert_called_once_with(
+                "feature-123", None  # doc_type not provided, defaults to None
+            )
 
         asyncio.run(run_test())
 

@@ -3,6 +3,7 @@
 import re
 import time
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -11,11 +12,12 @@ from urllib3.util.retry import Retry
 
 from src.shared.config import DocsRepoConfig
 from src.shared.errors import (
+    APIError,
+    ErrorCode,
     GitCommandError,
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
-from src.shared.security import SecurityValidator
 
 logger = setup_logging()
 
@@ -278,11 +280,13 @@ class RepoManager:
         # Branch name should already be validated, but ensure it's safe
         branch_name = SecurityValidator.validate_branch_name(branch_name)
         try:
+            # Validate branch name
+            validated_name = validate_branch_name(branch_name)
             self.git_utils._run_git_command(
-                self.workspace_root, "checkout", "-b", branch_name
+                self.workspace_root, "checkout", "-b", validated_name
             )
             return True
-        except GitCommandError as e:
+        except (GitCommandError, InvalidPathError) as e:
             logger.error(f"Error creating branch: {e.message}")
             return False
 
@@ -337,6 +341,57 @@ class RepoManager:
         except GitCommandError as e:
             logger.error(f"Error pushing branch: {e.message}")
             return False
+
+    @retry_with_backoff(
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(RequestException, Timeout),
+    )
+    def _create_github_pr_request(
+        self, url: str, headers: dict[str, str], data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Make GitHub API request with retry logic.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers
+            data: Request payload
+
+        Returns:
+            Response JSON data
+
+        Raises:
+            APIError: If request fails after retries
+        """
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except Timeout as e:
+            raise APIError(
+                "GitHub API request timed out",
+                details=str(e),
+                error_code=ErrorCode.API_TIMEOUT,
+            ) from e
+        except requests.HTTPError as e:
+            if e.response and e.response.status_code == 401:
+                raise APIError(
+                    "GitHub authentication failed",
+                    details=str(e),
+                    error_code=ErrorCode.API_AUTHENTICATION_FAILED,
+                ) from e
+            elif e.response and e.response.status_code == 403:
+                raise APIError(
+                    "GitHub API rate limit exceeded",
+                    details=str(e),
+                    error_code=ErrorCode.API_RATE_LIMIT,
+                ) from e
+            raise APIError(
+                f"GitHub API request failed: {e.response.status_code if e.response else 'Unknown'}",
+                details=str(e),
+                error_code=ErrorCode.API_REQUEST_FAILED,
+            ) from e
 
     def create_github_pr(
         self, branch: str, title: str, description: str
@@ -394,12 +449,63 @@ class RepoManager:
 
             return pr_url, pr_number, True, f"PR #{pr_number} created successfully"
 
-        except requests.RequestException as e:
-            logger.error(f"Error creating GitHub PR: {e}")
-            return None, None, False, f"Failed to create PR: {str(e)}"
+        except APIError as e:
+            logger.error(f"Error creating GitHub PR: {e.message}")
+            return None, None, False, e.message
         except Exception as e:
             logger.error(f"Unexpected error creating GitHub PR: {e}")
             return None, None, False, f"Unexpected error: {str(e)}"
+
+    @retry_with_backoff(
+        max_retries=3,
+        initial_delay=1.0,
+        retryable_exceptions=(RequestException, Timeout),
+    )
+    def _create_gitlab_pr_request(
+        self, url: str, headers: dict[str, str], data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Make GitLab API request with retry logic.
+
+        Args:
+            url: API endpoint URL
+            headers: Request headers
+            data: Request payload
+
+        Returns:
+            Response JSON data
+
+        Raises:
+            APIError: If request fails after retries
+        """
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except Timeout as e:
+            raise APIError(
+                "GitLab API request timed out",
+                details=str(e),
+                error_code=ErrorCode.API_TIMEOUT,
+            ) from e
+        except requests.HTTPError as e:
+            if e.response and e.response.status_code == 401:
+                raise APIError(
+                    "GitLab authentication failed",
+                    details=str(e),
+                    error_code=ErrorCode.API_AUTHENTICATION_FAILED,
+                ) from e
+            elif e.response and e.response.status_code == 429:
+                raise APIError(
+                    "GitLab API rate limit exceeded",
+                    details=str(e),
+                    error_code=ErrorCode.API_RATE_LIMIT,
+                ) from e
+            raise APIError(
+                f"GitLab API request failed: {e.response.status_code if e.response else 'Unknown'}",
+                details=str(e),
+                error_code=ErrorCode.API_REQUEST_FAILED,
+            ) from e
 
     def create_gitlab_pr(
         self, branch: str, title: str, description: str
@@ -456,9 +562,9 @@ class RepoManager:
 
             return mr_url, mr_number, True, f"MR !{mr_number} created successfully"
 
-        except requests.RequestException as e:
-            logger.error(f"Error creating GitLab MR: {e}")
-            return None, None, False, f"Failed to create MR: {str(e)}"
+        except APIError as e:
+            logger.error(f"Error creating GitLab MR: {e.message}")
+            return None, None, False, e.message
         except Exception as e:
             logger.error(f"Unexpected error creating GitLab MR: {e}")
             return None, None, False, f"Unexpected error: {str(e)}"
