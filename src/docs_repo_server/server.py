@@ -15,11 +15,9 @@ from src.shared.errors import (
     DocsCopilotError,
     ErrorCode,
     InvalidPathError,
-    SecurityError,
     ValidationError,
 )
 from src.shared.logging import setup_logging
-from src.shared.security import SecurityValidator
 from src.shared.validation import (
     validate_branch_name,
     validate_doc_type,
@@ -295,22 +293,6 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-    except SecurityError as e:
-        logger.warning(f"Security validation error: {e.message}")
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(
-                    {
-                        "error": "SecurityError",
-                        "message": e.message,
-                        "details": e.details,
-                        "error_code": ErrorCode.VALIDATION_ERROR.value,
-                    },
-                    indent=2,
-                ),
-            )
-        ]
     except InvalidPathError as e:
         logger.warning(f"Invalid path: {e.message}")
         return [
