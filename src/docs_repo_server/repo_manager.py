@@ -1,23 +1,23 @@
 """Repository manager for handling same-repo and external-repo modes."""
 
+import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from requests import RequestException, Timeout
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from src.shared.config import DocsRepoConfig
 from src.shared.errors import (
     APIError,
     ErrorCode,
     GitCommandError,
-    InvalidPathError,
 )
 from src.shared.git_utils import GitUtils
 from src.shared.logging import setup_logging
-from src.shared.retry import retry_with_backoff
-from src.shared.validation import validate_branch_name, validate_path
 
 logger = setup_logging()
 
@@ -33,21 +33,25 @@ class RepoManager:
         """
         self.config = config
         self.workspace_root = Path(config.workspace_root)
-        self.git_utils = GitUtils(config.workspace_root)
+        self.git_utils = GitUtils(
+            config.workspace_root, timeout=config.git_command_timeout
+        )
+
+        # Create secure HTTP session with certificate verification
+        self.session = requests.Session()
+        retry_config = config.api_retry
+        retry_strategy = Retry(
+            total=retry_config.total,
+            backoff_factor=retry_config.backoff_factor,
+            status_forcelist=retry_config.status_forcelist,
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
 
         # Determine repo mode
-        self.repo_mode = self._determine_repo_mode()
+        self.repo_mode = config.repo_mode
         self.docs_path = self._get_docs_path()
-
-    def _determine_repo_mode(self) -> str:
-        """Determine if we're in same-repo or external-repo mode.
-
-        Returns:
-            "same" or "external"
-        """
-        # For now, default to same-repo mode
-        # External repo mode would require additional configuration
-        return "same"
 
     def _get_docs_path(self) -> Path:
         """Get the path to documentation directory.
@@ -55,8 +59,8 @@ class RepoManager:
         Returns:
             Path to docs directory
         """
-        # Default docs path in same-repo mode
-        docs_path = self.workspace_root / "docs"
+        # Use configured docs directory name
+        docs_path = self.workspace_root / self.config.docs_directory
         return docs_path
 
     def suggest_doc_location(
@@ -65,42 +69,182 @@ class RepoManager:
         """Suggest documentation location for a feature.
 
         Args:
-            feature_id: Feature identifier
+            feature_id: Feature identifier (must be validated)
             doc_type: Optional document type (concept, task, etc.)
 
         Returns:
             Tuple of (suggested_path, doc_type)
         """
-        if not doc_type:
-            # Default to concept for now
-            doc_type = "concept"
+        # Validate doc_type if provided, otherwise use default from config
+        if doc_type:
+            doc_type = SecurityValidator.validate_doc_type(doc_type)
+        else:
+            doc_type = self.config.default_doc_type
 
         # Generate path based on doc_type and feature_id
-        # Normalize feature_id for filename
+        # Normalize feature_id for filename (already validated)
         safe_feature_id = feature_id.lower().replace(" ", "_").replace("/", "_")
 
-        if doc_type == "concept":
-            path = self.docs_path / "concepts" / f"{safe_feature_id}.md"
-        elif doc_type == "task":
-            path = self.docs_path / "tasks" / f"{safe_feature_id}.md"
-        elif doc_type == "api_reference":
-            path = self.docs_path / "api" / f"{safe_feature_id}.md"
-        elif doc_type == "release_notes":
-            path = self.docs_path / "releases" / f"{safe_feature_id}.md"
-        elif doc_type == "feature_overview":
-            path = self.docs_path / "features" / f"{safe_feature_id}.md"
-        elif doc_type == "configuration_reference":
-            path = self.docs_path / "configuration" / f"{safe_feature_id}.md"
-        else:
-            path = self.docs_path / f"{safe_feature_id}.md"
+        # Get directory name from config mapping, fallback to doc_type if not mapped
+        directory = self.config.doc_type_directories.get(doc_type, doc_type)
+        path = self.docs_path / directory / f"{safe_feature_id}.md"
 
         return str(path.relative_to(self.workspace_root)), doc_type
+
+    def generate_branch_name(
+        self,
+        title: str,
+        feature_id: str | None = None,
+        ensure_unique: bool = True,
+    ) -> str:
+        """Generate a git branch name from available context.
+
+        Args:
+            title: PR title
+            feature_id: Optional feature identifier (takes priority if provided)
+            ensure_unique: Check if branch exists and make unique if needed
+
+        Returns:
+            Valid git branch name
+        """
+        # Priority: feature_id > title > timestamp fallback
+        if feature_id:
+            base = self._sanitize_for_branch(feature_id)
+        else:
+            base = self._sanitize_for_branch(title)
+
+        # Build branch name with docs/ prefix
+        if base:
+            branch_name = f"docs/{base}"
+        else:
+            # Fallback to timestamp if both title and feature_id are empty/invalid
+            branch_name = f"docs/{int(time.time())}"
+
+        # Ensure it's valid according to Git rules
+        branch_name = self._ensure_valid_branch_name(branch_name)
+
+        # Make unique if needed
+        if ensure_unique:
+            branch_name = self._ensure_unique_branch(branch_name)
+
+        return branch_name
+
+    def _sanitize_for_branch(self, text: str) -> str:
+        """Sanitize text for use in branch name.
+
+        Args:
+            text: Text to sanitize
+
+        Returns:
+            Sanitized branch name segment
+        """
+        if not text:
+            return ""
+
+        # Lowercase
+        text = text.lower()
+
+        # Replace spaces, underscores, and slashes with hyphens
+        text = re.sub(r"[\s_/]+", "-", text)
+
+        # Remove invalid characters (keep alphanumeric and hyphens)
+        text = re.sub(r"[^a-z0-9\-]", "", text)
+
+        # Remove multiple consecutive hyphens
+        text = re.sub(r"-+", "-", text)
+
+        # Remove leading/trailing hyphens
+        text = text.strip("-")
+
+        # Limit length (leave room for prefix and uniqueness suffix)
+        if len(text) > 200:
+            text = text[:200]
+
+        return text
+
+    def _ensure_valid_branch_name(self, name: str) -> str:
+        """Ensure branch name follows Git rules.
+
+        Args:
+            name: Branch name to validate
+
+        Returns:
+            Valid branch name
+        """
+        # Can't start/end with dot
+        name = name.strip(".")
+
+        # Can't end with .lock
+        if name.endswith(".lock"):
+            name = name[:-5]
+
+        # Can't contain ..
+        name = name.replace("..", "-")
+
+        # Can't contain @{
+        name = name.replace("@", "-")
+        name = name.replace("{", "-")
+
+        # Ensure it doesn't exceed Git's 255 character limit
+        if len(name) > 255:
+            name = name[:255]
+
+        return name
+
+    def _ensure_unique_branch(self, base_name: str) -> str:
+        """Ensure branch name is unique by appending number if needed.
+
+        Args:
+            base_name: Base branch name
+
+        Returns:
+            Unique branch name
+        """
+        # Check if branch exists
+        try:
+            branches_output = self.git_utils._run_git_command(
+                self.workspace_root, "branch", "-a"
+            )
+            existing_branches = [
+                b.strip().replace("* ", "").replace("remotes/", "")
+                for b in branches_output.split("\n")
+                if b.strip()
+            ]
+
+            # Extract just the branch name (without remote prefix)
+            existing_branch_names = set()
+            for branch in existing_branches:
+                # Handle remotes/origin/branch-name format
+                if "/" in branch:
+                    existing_branch_names.add(branch.split("/")[-1])
+                else:
+                    existing_branch_names.add(branch)
+
+            if base_name not in existing_branch_names:
+                return base_name
+
+            # Append number to make unique
+            counter = 1
+            while counter <= 1000:  # Safety limit
+                candidate = f"{base_name}-{counter}"
+                if candidate not in existing_branch_names:
+                    return candidate
+                counter += 1
+
+            # Fallback to timestamp if counter exceeds limit
+            timestamp = int(time.time())
+            return f"{base_name}-{timestamp}"
+
+        except Exception as e:
+            # If check fails, return base name
+            logger.warning(f"Could not check branch uniqueness: {e}")
+            return base_name
 
     def write_doc(self, path: str, content: str) -> tuple[str, bool, str]:
         """Write documentation file.
 
         Args:
-            path: File path (relative to workspace_root or absolute)
+            path: File path (relative to workspace_root or absolute, must be validated)
             content: Document content
 
         Returns:
@@ -109,11 +253,8 @@ class RepoManager:
         Raises:
             InvalidPathError: If path is invalid or unsafe
         """
-        # Validate and normalize path
-        try:
-            file_path = validate_path(path, self.workspace_root)
-        except InvalidPathError:
-            raise
+        # Path should already be validated, but double-check for safety
+        file_path = SecurityValidator.validate_path(path, self.workspace_root)
 
         # Create directory structure if needed
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,11 +272,13 @@ class RepoManager:
         """Create a git branch.
 
         Args:
-            branch_name: Name of the branch
+            branch_name: Name of the branch (must be validated)
 
         Returns:
             True if successful, False otherwise
         """
+        # Branch name should already be validated, but ensure it's safe
+        branch_name = SecurityValidator.validate_branch_name(branch_name)
         try:
             # Validate branch name
             validated_name = validate_branch_name(branch_name)
@@ -152,7 +295,7 @@ class RepoManager:
 
         Args:
             message: Commit message
-            files: Optional list of files to commit (all if None)
+            files: Optional list of files to commit (all if None, paths must be validated)
 
         Returns:
             True if successful, False otherwise
@@ -161,7 +304,14 @@ class RepoManager:
             # Add files
             if files:
                 for file in files:
-                    self.git_utils._run_git_command(self.workspace_root, "add", file)
+                    # Validate file path
+                    validated_path = SecurityValidator.validate_path(
+                        file, self.workspace_root
+                    )
+                    relative_path = str(validated_path.relative_to(self.workspace_root))
+                    self.git_utils._run_git_command(
+                        self.workspace_root, "add", relative_path
+                    )
             else:
                 self.git_utils._run_git_command(self.workspace_root, "add", ".")
 
@@ -270,8 +420,8 @@ class RepoManager:
 
             owner, repo = repo_info
 
-            # Create PR via GitHub API with retry logic
-            url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+            # Create PR via GitHub API (supports GitHub Enterprise)
+            url = f"{self.config.github_api_base_url}/repos/{owner}/{repo}/pulls"
             headers = {
                 "Authorization": f"token {self.config.github_token}",
                 "Accept": "application/vnd.github.v3+json",
@@ -280,10 +430,20 @@ class RepoManager:
                 "title": title,
                 "body": description,
                 "head": branch,
-                "base": "main",  # Default base branch
+                "base": self.config.default_base_branch,
             }
 
-            pr_data = self._create_github_pr_request(url, headers, data)
+            # Use secure session with certificate verification
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=data,
+                timeout=self.config.api_request_timeout,
+                verify=True,
+            )
+            response.raise_for_status()
+
+            pr_data = response.json()
             pr_url = pr_data.get("html_url")
             pr_number = pr_data.get("number")
 
@@ -374,8 +534,8 @@ class RepoManager:
 
             project_id = repo_info
 
-            # Create MR via GitLab API with retry logic
-            url = f"https://gitlab.com/api/v4/projects/{project_id}/merge_requests"
+            # Create MR via GitLab API (supports self-hosted GitLab)
+            url = f"{self.config.gitlab_api_base_url}/projects/{project_id}/merge_requests"
             headers = {
                 "PRIVATE-TOKEN": self.config.gitlab_token,
             }
@@ -383,10 +543,20 @@ class RepoManager:
                 "title": title,
                 "description": description,
                 "source_branch": branch,
-                "target_branch": "main",  # Default target branch
+                "target_branch": self.config.default_base_branch,
             }
 
-            mr_data = self._create_gitlab_pr_request(url, headers, data)
+            # Use secure session with certificate verification
+            response = self.session.post(
+                url,
+                headers=headers,
+                json=data,
+                timeout=self.config.api_request_timeout,
+                verify=True,
+            )
+            response.raise_for_status()
+
+            mr_data = response.json()
             mr_url = mr_data.get("web_url")
             mr_number = mr_data.get("iid")
 
@@ -408,20 +578,24 @@ class RepoManager:
         Returns:
             Tuple of (owner, repo) or None
         """
+        github_host = self.config.github_host
         # Handle various URL formats
-        if remote_url.startswith("git@"):
-            # git@github.com:owner/repo.git
+        if remote_url.startswith(f"git@{github_host}:"):
+            # git@github.com:owner/repo.git (or git@custom-host:owner/repo.git)
             parts = (
-                remote_url.replace("git@github.com:", "").replace(".git", "").split("/")
+                remote_url.replace(f"git@{github_host}:", "")
+                .replace(".git", "")
+                .split("/")
             )
             if len(parts) == 2:
                 return (parts[0], parts[1])
         elif remote_url.startswith("https://"):
-            # https://github.com/owner/repo.git
+            # https://github.com/owner/repo.git (or https://custom-host/owner/repo.git)
             parsed = urlparse(remote_url)
-            parts = parsed.path.strip("/").replace(".git", "").split("/")
-            if len(parts) == 2:
-                return (parts[0], parts[1])
+            if github_host in parsed.netloc or parsed.netloc.endswith(github_host):
+                parts = parsed.path.strip("/").replace(".git", "").split("/")
+                if len(parts) == 2:
+                    return (parts[0], parts[1])
 
         return None
 
@@ -434,15 +608,19 @@ class RepoManager:
         Returns:
             Project ID (URL-encoded) or None
         """
+        gitlab_host = self.config.gitlab_host
         # Handle various URL formats
-        if remote_url.startswith("git@"):
-            # git@gitlab.com:owner/repo.git -> owner/repo
-            project_path = remote_url.replace("git@gitlab.com:", "").replace(".git", "")
+        if remote_url.startswith(f"git@{gitlab_host}:"):
+            # git@gitlab.com:owner/repo.git -> owner/repo (or custom host)
+            project_path = remote_url.replace(f"git@{gitlab_host}:", "").replace(
+                ".git", ""
+            )
             return project_path.replace("/", "%2F")
         elif remote_url.startswith("https://"):
-            # https://gitlab.com/owner/repo.git -> owner/repo
+            # https://gitlab.com/owner/repo.git -> owner/repo (or custom host)
             parsed = urlparse(remote_url)
-            project_path = parsed.path.strip("/").replace(".git", "")
-            return project_path.replace("/", "%2F")
+            if gitlab_host in parsed.netloc or parsed.netloc.endswith(gitlab_host):
+                project_path = parsed.path.strip("/").replace(".git", "")
+                return project_path.replace("/", "%2F")
 
         return None

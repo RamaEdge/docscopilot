@@ -30,3 +30,4 @@ repos:
         additional_dependencies: [types-pyyaml]
         args: [--namespace-packages, --explicit-package-bases]
         files: ^src/
+

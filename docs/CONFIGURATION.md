@@ -112,6 +112,74 @@ Common settings for all MCP servers:
 |--------|---------------------|---------|-------------|
 | `github_token` | `GITHUB_TOKEN` | `None` | GitHub personal access token (set via env var for security) |
 | `gitlab_token` | `GITLAB_TOKEN` | `None` | GitLab personal access token (set via env var for security) |
+| `github_api_base_url` | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL (supports GitHub Enterprise) |
+| `gitlab_api_base_url` | `GITLAB_API_BASE_URL` | `https://gitlab.com/api/v4` | GitLab API base URL (supports self-hosted GitLab) |
+| `github_host` | `GITHUB_HOST` | `github.com` | GitHub hostname (for parsing remote URLs) |
+| `gitlab_host` | `GITLAB_HOST` | `gitlab.com` | GitLab hostname (for parsing remote URLs) |
+| `default_doc_type` | `DEFAULT_DOC_TYPE` | `concept` | Default document type when not specified |
+| `default_base_branch` | `DEFAULT_BASE_BRANCH` | `main` | Default base branch for pull requests |
+| `docs_directory` | `DOCS_DIRECTORY` | `docs` | Directory name for documentation files |
+| `repo_mode` | `REPO_MODE` | `same` | Repository mode: `same` or `external` |
+| `doc_type_directories` | N/A | See below | Mapping of document types to directory names |
+| `api_retry` | See below | See below | API retry configuration (nested object) |
+| `git_command_timeout` | `GIT_COMMAND_TIMEOUT` | `30` | Timeout for git commands in seconds |
+| `api_request_timeout` | `API_REQUEST_TIMEOUT` | `30` | Timeout for API requests in seconds |
+
+#### API Retry Configuration
+
+The `api_retry` configuration controls retry behavior for API requests:
+
+| Option | Environment Variable | Default | Description |
+|--------|---------------------|---------|-------------|
+| `total` | `API_RETRY_TOTAL` | `3` | Total number of retry attempts |
+| `backoff_factor` | `API_RETRY_BACKOFF_FACTOR` | `1` | Backoff factor for exponential backoff |
+| `status_forcelist` | `API_RETRY_STATUS_CODES` | `[429, 500, 502, 503, 504]` | HTTP status codes that trigger retry (comma-separated) |
+
+Example YAML configuration:
+```yaml
+docs_repo:
+  api_retry:
+    total: 5
+    backoff_factor: 2
+    status_forcelist: [429, 500, 502, 503, 504]
+```
+
+Example TOML configuration:
+```toml
+[docs_repo.api_retry]
+total = 5
+backoff_factor = 2
+status_forcelist = [429, 500, 502, 503, 504]
+```
+
+#### Self-Hosted Instance Support
+
+To use GitHub Enterprise or self-hosted GitLab, configure the API base URLs and hosts:
+
+```yaml
+docs_repo:
+  github_api_base_url: "https://github.example.com/api/v3"
+  github_host: "github.example.com"
+  gitlab_api_base_url: "https://gitlab.example.com/api/v4"
+  gitlab_host: "gitlab.example.com"
+```
+
+#### Document Type Directory Mapping
+
+The `doc_type_directories` configuration maps document types to their directory names:
+
+```yaml
+docs_repo:
+  doc_type_directories:
+    concept: concepts
+    task: tasks
+    api_reference: api
+    release_notes: releases
+    feature_overview: features
+    configuration_reference: configuration
+```
+
+You can customize this mapping to match your documentation structure.
 
 ## Security Best Practices
 
@@ -194,4 +262,5 @@ Ensure you're using the `.load()` method which respects the priority order:
 config = CodeContextConfig.load(config_path)  # Correct
 # Not: config = CodeContextConfig.from_file(config_path)  # Ignores env vars
 ```
+
 

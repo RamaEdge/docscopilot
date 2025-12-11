@@ -8,20 +8,25 @@ from src.shared.errors import (
     GitTimeoutError,
     RepositoryNotFoundError,
 )
+from src.shared.security import SecurityValidator
 
 
 class GitUtils:
     """Utility class for executing git commands."""
 
-    def __init__(self, workspace_root: Path, git_binary: str = "git"):
+    def __init__(
+        self, workspace_root: Path, git_binary: str = "git", timeout: int = 30
+    ):
         """Initialize GitUtils.
 
         Args:
             workspace_root: Root directory containing repositories
             git_binary: Path to git binary (default: "git")
+            timeout: Timeout for git commands in seconds (default: 30)
         """
         self.workspace_root = Path(workspace_root)
         self.git_binary = git_binary
+        self.timeout = timeout
 
     def _run_git_command(
         self, repo_path: Path, *args: str, cwd: Path | None = None
@@ -65,13 +70,13 @@ class GitUtils:
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=30,
+                timeout=self.timeout,
             )
             return result.stdout.strip()
         except subprocess.TimeoutExpired as e:
             raise GitTimeoutError(
                 f"Git command timed out: {' '.join(cmd)}",
-                "Command exceeded 30 second timeout",
+                f"Command exceeded {self.timeout} second timeout",
             ) from e
         except subprocess.CalledProcessError as e:
             raise GitCommandError(
@@ -88,7 +93,12 @@ class GitUtils:
 
         Returns:
             List of commit hashes
+
+        Raises:
+            SecurityError: If pattern contains dangerous characters
         """
+        # Sanitize pattern to prevent command injection
+        pattern = SecurityValidator.sanitize_git_pattern(pattern)
         output = self._run_git_command(
             repo_path, "log", "--grep", pattern, "--format=%H", "--all"
         )
@@ -103,7 +113,12 @@ class GitUtils:
 
         Returns:
             Dictionary with commit information
+
+        Raises:
+            SecurityError: If commit hash is invalid
         """
+        # Validate commit hash to prevent injection
+        commit_hash = SecurityValidator.sanitize_commit_hash(commit_hash)
         output = self._run_git_command(
             repo_path,
             "show",
@@ -127,7 +142,12 @@ class GitUtils:
 
         Returns:
             List of branch names
+
+        Raises:
+            SecurityError: If commit hash is invalid
         """
+        # Validate commit hash to prevent injection
+        commit_hash = SecurityValidator.sanitize_commit_hash(commit_hash)
         output = self._run_git_command(
             repo_path, "branch", "-a", "--contains", commit_hash
         )
@@ -146,7 +166,12 @@ class GitUtils:
 
         Returns:
             List of tag names
+
+        Raises:
+            SecurityError: If commit hash is invalid
         """
+        # Validate commit hash to prevent injection
+        commit_hash = SecurityValidator.sanitize_commit_hash(commit_hash)
         output = self._run_git_command(repo_path, "tag", "--contains", commit_hash)
         return [line.strip() for line in output.split("\n") if line.strip()]
 
@@ -160,7 +185,13 @@ class GitUtils:
 
         Returns:
             List of changed file paths
+
+        Raises:
+            SecurityError: If commit hashes are invalid
         """
+        # Validate commit hashes to prevent injection
+        base = SecurityValidator.sanitize_commit_hash(base)
+        head = SecurityValidator.sanitize_commit_hash(head)
         output = self._run_git_command(
             repo_path, "diff", "--name-only", f"{base}..{head}"
         )
@@ -175,7 +206,12 @@ class GitUtils:
 
         Returns:
             List of file paths
+
+        Raises:
+            SecurityError: If pattern contains dangerous characters
         """
+        # Sanitize pattern to prevent command injection
+        pattern = SecurityValidator.sanitize_git_pattern(pattern)
         output = self._run_git_command(
             repo_path,
             "log",
@@ -216,5 +252,11 @@ class GitUtils:
 
         Returns:
             Diff output as string
+
+        Raises:
+            SecurityError: If commit hashes are invalid
         """
+        # Validate commit hashes to prevent injection
+        base = SecurityValidator.sanitize_commit_hash(base)
+        head = SecurityValidator.sanitize_commit_hash(head)
         return self._run_git_command(repo_path, "diff", f"{base}..{head}")

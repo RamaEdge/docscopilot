@@ -18,7 +18,12 @@ from src.shared.errors import (
     ValidationError,
 )
 from src.shared.logging import setup_logging
-from src.shared.validation import validate_branch_name, validate_doc_type
+from src.shared.validation import (
+    validate_branch_name,
+    validate_doc_type,
+    validate_feature_id,
+    validate_path,
+)
 
 # Initialize logger
 logger = setup_logging()
@@ -89,7 +94,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "branch": {
                         "type": "string",
-                        "description": "Branch name",
+                        "description": "Optional branch name (auto-generated from title/feature_id if not provided)",
                     },
                     "title": {
                         "type": "string",
@@ -99,13 +104,17 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "PR description",
                     },
+                    "feature_id": {
+                        "type": "string",
+                        "description": "Optional feature ID for better branch naming",
+                    },
                     "files": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Optional list of files to commit",
                     },
                 },
-                "required": ["branch", "title", "description"],
+                "required": ["title", "description"],
             },
         ),
     ]
@@ -127,10 +136,8 @@ async def call_tool(
                 raise ValidationError("feature_id is required")
 
             # Validate inputs
-            from src.shared.validation import validate_feature_id
-
             validated_feature_id = validate_feature_id(feature_id)
-            validated_doc_type = validate_doc_type(doc_type)
+            validated_doc_type = validate_doc_type(doc_type) if doc_type else None
 
             path, final_doc_type = repo_manager.suggest_doc_location(
                 validated_feature_id, validated_doc_type
@@ -139,7 +146,7 @@ async def call_tool(
             location = DocLocation(
                 path=path,
                 doc_type=final_doc_type,
-                reason=f"Suggested location for {feature_id}",
+                reason=f"Suggested location for {validated_feature_id}",
             )
 
             return [
@@ -154,12 +161,15 @@ async def call_tool(
             doc_content: str | None = arguments.get("content")
 
             if not doc_path:
-                raise ValueError("path is required")
+                raise ValidationError("path is required")
             if not doc_content:
-                raise ValueError("content is required")
+                raise ValidationError("content is required")
 
+            # Validate path
+            validated_path = validate_path(doc_path, repo_manager.workspace_root)
             actual_path, success, message = repo_manager.write_doc(
-                doc_path, doc_content
+                str(validated_path.relative_to(repo_manager.workspace_root)),
+                doc_content,
             )
 
             result = WriteResult(path=actual_path, success=success, message=message)
@@ -175,17 +185,13 @@ async def call_tool(
             branch = arguments.get("branch")
             title = arguments.get("title")
             description = arguments.get("description")
+            feature_id = arguments.get("feature_id")
             files = arguments.get("files")
 
-            if not branch:
-                raise ValidationError("branch is required")
             if not title:
                 raise ValidationError("title is required")
             if not description:
                 raise ValidationError("description is required")
-
-            # Validate branch name
-            validated_branch = validate_branch_name(branch)
 
             if not isinstance(title, str) or len(title) > 200:
                 raise ValidationError(
@@ -195,6 +201,33 @@ async def call_tool(
                 raise ValidationError(
                     "description must be a string with 10000 characters or less"
                 )
+
+            # Auto-generate branch if not provided
+            if not branch:
+                # Validate feature_id if provided
+                validated_feature_id = None
+                if feature_id:
+                    validated_feature_id = validate_feature_id(feature_id)
+                branch = repo_manager.generate_branch_name(
+                    title=title,
+                    feature_id=validated_feature_id,
+                )
+                logger.info(f"Auto-generated branch name: {branch}")
+
+            # Validate branch name
+            validated_branch = validate_branch_name(branch)
+
+            # Validate file paths if provided
+            validated_files = None
+            if files:
+                validated_files = []
+                for file_path in files:
+                    validated_path = validate_path(
+                        file_path, repo_manager.workspace_root
+                    )
+                    validated_files.append(
+                        str(validated_path.relative_to(repo_manager.workspace_root))
+                    )
 
             # Create branch
             if not repo_manager.create_branch(validated_branch):
@@ -207,7 +240,7 @@ async def call_tool(
 
             # Commit changes
             commit_message = f"{title}\n\n{description}"
-            if not repo_manager.commit_changes(commit_message, files):
+            if not repo_manager.commit_changes(commit_message, validated_files):
                 return [
                     TextContent(
                         type="text",
@@ -260,14 +293,6 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
-    except ValidationError as e:
-        logger.warning(f"Validation error: {e.message}")
-        return [
-            TextContent(
-                type="text",
-                text=json.dumps(e.to_dict(), indent=2),
-            )
-        ]
     except InvalidPathError as e:
         logger.warning(f"Invalid path: {e.message}")
         return [

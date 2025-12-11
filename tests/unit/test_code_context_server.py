@@ -42,44 +42,59 @@ class TestCodeContextServer:
         asyncio.run(run_test())
 
     @patch("src.code_context_server.server.feature_extractor")
-    def test_call_tool_get_feature_metadata(self, mock_extractor):
+    def test_call_tool_get_feature_metadata(self, mock_extractor, tmp_path):
         """Test get_feature_metadata tool call."""
         mock_metadata = MagicMock()
         mock_metadata.model_dump_json.return_value = '{"feature_id": "test-123"}'
         mock_extractor.get_feature_metadata.return_value = mock_metadata
 
-        async def run_test():
-            result = await server.call_tool(
-                "get_feature_metadata", {"feature_id": "test-123"}
-            )
-            assert len(result) == 1
-            assert "test-123" in result[0].text
-            mock_extractor.get_feature_metadata.assert_called_once_with(
-                "test-123", None
-            )
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
 
-        asyncio.run(run_test())
+            async def run_test():
+                result = await server.call_tool(
+                    "get_feature_metadata", {"feature_id": "test-123"}
+                )
+                assert len(result) == 1
+                assert "test-123" in result[0].text
+                mock_extractor.get_feature_metadata.assert_called_once()
+                # Check that feature_id was validated
+                call_args = mock_extractor.get_feature_metadata.call_args
+                assert call_args[0][0] == "test-123"
+
+            asyncio.run(run_test())
 
     @patch("src.code_context_server.server.feature_extractor")
-    def test_call_tool_get_feature_metadata_with_repo_path(self, mock_extractor):
+    def test_call_tool_get_feature_metadata_with_repo_path(
+        self, mock_extractor, tmp_path
+    ):
         """Test get_feature_metadata tool call with repo_path."""
         mock_metadata = MagicMock()
         mock_metadata.model_dump_json.return_value = '{"feature_id": "test-123"}'
         mock_extractor.get_feature_metadata.return_value = mock_metadata
 
-        async def run_test():
-            result = await server.call_tool(
-                "get_feature_metadata",
-                {"feature_id": "test-123", "repo_path": "repo1"},
-            )
-            assert len(result) == 1
-            mock_extractor.get_feature_metadata.assert_called_once()
-            # Check that repo_path was converted to Path
-            call_args = mock_extractor.get_feature_metadata.call_args
-            assert call_args[0][0] == "test-123"
-            assert isinstance(call_args[0][1], Path)
+        # Create repo_path directory
+        repo_path = tmp_path / "repo1"
+        repo_path.mkdir()
 
-        asyncio.run(run_test())
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
+
+            async def run_test():
+                result = await server.call_tool(
+                    "get_feature_metadata",
+                    {"feature_id": "test-123", "repo_path": "repo1"},
+                )
+                assert len(result) == 1
+                mock_extractor.get_feature_metadata.assert_called_once()
+                # Check that repo_path was validated and converted to Path
+                call_args = mock_extractor.get_feature_metadata.call_args
+                assert call_args[0][0] == "test-123"
+                assert isinstance(call_args[0][1], Path)
+
+            asyncio.run(run_test())
 
     @patch("src.code_context_server.server.feature_extractor")
     def test_call_tool_get_feature_metadata_missing_feature_id(self, mock_extractor):
@@ -94,24 +109,46 @@ class TestCodeContextServer:
         asyncio.run(run_test())
 
     @patch("src.code_context_server.server.feature_extractor")
-    def test_call_tool_get_feature_metadata_not_found(self, mock_extractor):
+    def test_call_tool_security_error(self, mock_extractor, tmp_path):
+        """Test call_tool with SecurityError."""
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
+
+            async def run_test():
+                # Test with invalid feature_id that triggers SecurityError
+                result = await server.call_tool(
+                    "get_feature_metadata", {"feature_id": "feature;rm -rf /"}
+                )
+                assert len(result) == 1
+                assert "error" in result[0].text.lower()
+                assert "security" in result[0].text.lower()
+
+            asyncio.run(run_test())
+
+    @patch("src.code_context_server.server.feature_extractor")
+    def test_call_tool_get_feature_metadata_not_found(self, mock_extractor, tmp_path):
         """Test get_feature_metadata tool call when feature not found."""
         mock_extractor.get_feature_metadata.side_effect = FeatureNotFoundError(
             "Feature not found", "Details"
         )
 
-        async def run_test():
-            result = await server.call_tool(
-                "get_feature_metadata", {"feature_id": "nonexistent"}
-            )
-            assert len(result) == 1
-            assert "error" in result[0].text.lower()
-            assert "feature not found" in result[0].text.lower()
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
 
-        asyncio.run(run_test())
+            async def run_test():
+                result = await server.call_tool(
+                    "get_feature_metadata", {"feature_id": "nonexistent"}
+                )
+                assert len(result) == 1
+                assert "error" in result[0].text.lower()
+                assert "feature not found" in result[0].text.lower()
+
+            asyncio.run(run_test())
 
     @patch("src.code_context_server.server.code_examples_extractor")
-    def test_call_tool_get_code_examples(self, mock_extractor):
+    def test_call_tool_get_code_examples(self, mock_extractor, tmp_path):
         """Test get_code_examples tool call."""
         mock_examples = MagicMock()
         mock_examples.model_dump_json.return_value = (
@@ -119,13 +156,23 @@ class TestCodeContextServer:
         )
         mock_extractor.get_code_examples.return_value = mock_examples
 
-        async def run_test():
-            result = await server.call_tool("get_code_examples", {"path": "test.py"})
-            assert len(result) == 1
-            assert "test.py" in result[0].text
-            mock_extractor.get_code_examples.assert_called_once()
+        # Create test file
+        test_file = tmp_path / "test.py"
+        test_file.touch()
 
-        asyncio.run(run_test())
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
+
+            async def run_test():
+                result = await server.call_tool(
+                    "get_code_examples", {"path": "test.py"}
+                )
+                assert len(result) == 1
+                assert "test.py" in result[0].text
+                mock_extractor.get_code_examples.assert_called_once()
+
+            asyncio.run(run_test())
 
     @patch("src.code_context_server.server.code_examples_extractor")
     def test_call_tool_get_code_examples_missing_path(self, mock_extractor):
@@ -175,31 +222,41 @@ class TestCodeContextServer:
         asyncio.run(run_test())
 
     @patch("src.code_context_server.server.endpoints_extractor")
-    def test_call_tool_get_changed_endpoints_with_git_refs(self, mock_extractor):
+    def test_call_tool_get_changed_endpoints_with_git_refs(
+        self, mock_extractor, tmp_path
+    ):
         """Test get_changed_endpoints tool call with git refs."""
         mock_endpoints = MagicMock()
         mock_endpoints.model_dump_json.return_value = '{"endpoints": []}'
         mock_extractor.get_changed_endpoints.return_value = mock_endpoints
 
-        async def run_test():
-            result = await server.call_tool(
-                "get_changed_endpoints",
-                {
-                    "repo_path": "repo1",
-                    "base": "main",
-                    "head": "feature-branch",
-                },
-            )
-            assert len(result) == 1
-            mock_extractor.get_changed_endpoints.assert_called_once()
-            # Check that repo_path was converted to Path
-            call_args = mock_extractor.get_changed_endpoints.call_args
-            assert call_args[0][0] is None
-            assert isinstance(call_args[0][1], Path)
-            assert call_args[0][2] == "main"
-            assert call_args[0][3] == "feature-branch"
+        # Create repo_path directory
+        repo_path = tmp_path / "repo1"
+        repo_path.mkdir()
 
-        asyncio.run(run_test())
+        # Mock config.workspace_root
+        with patch("src.code_context_server.server.config") as mock_config:
+            mock_config.workspace_root = tmp_path
+
+            async def run_test():
+                result = await server.call_tool(
+                    "get_changed_endpoints",
+                    {
+                        "repo_path": "repo1",
+                        "base": "a" * 7,  # Valid commit hash
+                        "head": "b" * 7,  # Valid commit hash
+                    },
+                )
+                assert len(result) == 1
+                mock_extractor.get_changed_endpoints.assert_called_once()
+                # Check that repo_path was validated and converted to Path
+                call_args = mock_extractor.get_changed_endpoints.call_args
+                assert call_args[0][0] is None
+                assert isinstance(call_args[0][1], Path)
+                assert call_args[0][2] == "a" * 7
+                assert call_args[0][3] == "b" * 7
+
+            asyncio.run(run_test())
 
     @patch("src.code_context_server.server.endpoints_extractor")
     def test_call_tool_get_changed_endpoints_git_error(self, mock_extractor):

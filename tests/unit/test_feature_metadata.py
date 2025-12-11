@@ -37,9 +37,10 @@ class TestFeatureMetadataExtractor:
         self, mock_log_grep, mock_get_commit_info, tmp_path
     ):
         """Test successful feature metadata extraction."""
-        mock_log_grep.return_value = ["abc123"]
+        commit_hash = "abc1234"
+        mock_log_grep.return_value = [commit_hash]
         mock_get_commit_info.return_value = {
-            "hash": "abc123",
+            "hash": commit_hash,
             "subject": "Add feature-123",
             "body": "Fixes #456",
         }
@@ -51,7 +52,7 @@ class TestFeatureMetadataExtractor:
         metadata = extractor.get_feature_metadata("feature-123", tmp_path)
         assert metadata.feature_id == "feature-123"
         assert len(metadata.commits) == 1
-        assert metadata.commits[0].hash == "abc123"
+        assert metadata.commits[0].hash == commit_hash
 
     @patch.object(GitUtils, "ls_files")
     @patch.object(GitUtils, "log_files")
@@ -70,9 +71,10 @@ class TestFeatureMetadataExtractor:
         tmp_path,
     ):
         """Test feature metadata with branches and tags."""
-        mock_log_grep.return_value = ["abc123"]
+        commit_hash = "abc1234"
+        mock_log_grep.return_value = [commit_hash]
         mock_get_commit_info.return_value = {
-            "hash": "abc123",
+            "hash": commit_hash,
             "subject": "Add feature",
             "body": "",
         }

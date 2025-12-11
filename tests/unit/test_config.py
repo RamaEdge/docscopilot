@@ -5,10 +5,12 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from src.shared.config import (
     CodeContextConfig,
     DocsRepoConfig,
+    RetryConfig,
     ServerConfig,
     TemplatesStyleConfig,
 )
@@ -210,6 +212,98 @@ class TestTemplatesStyleConfig:
         ):
             config = TemplatesStyleConfig.load(config_file)
             assert config.templates_path == templates_path  # Env overrides file
+
+
+@pytest.mark.unit
+class TestRetryConfig:
+    """Test cases for RetryConfig class."""
+
+    def test_defaults(self):
+        """Test default retry configuration values."""
+        config = RetryConfig()
+        assert config.total == 3
+        assert config.backoff_factor == 1
+        assert config.status_forcelist == [429, 500, 502, 503, 504]
+
+    def test_validate_total_valid(self):
+        """Test valid total values."""
+        assert RetryConfig(total=0).total == 0
+        assert RetryConfig(total=5).total == 5
+        assert RetryConfig(total=10).total == 10
+
+    def test_validate_total_invalid(self):
+        """Test invalid total values."""
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(total=-1)
+        assert "cannot be negative" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(total=11)
+        assert "cannot exceed 10" in str(exc_info.value)
+
+    def test_validate_backoff_factor_valid(self):
+        """Test valid backoff factor values."""
+        assert RetryConfig(backoff_factor=0).backoff_factor == 0
+        assert RetryConfig(backoff_factor=5).backoff_factor == 5
+        assert RetryConfig(backoff_factor=10).backoff_factor == 10
+
+    def test_validate_backoff_factor_invalid(self):
+        """Test invalid backoff factor values."""
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(backoff_factor=-1)
+        assert "cannot be negative" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(backoff_factor=11)
+        assert "cannot exceed 10" in str(exc_info.value)
+
+    def test_validate_status_codes_valid(self):
+        """Test valid status code lists."""
+        config = RetryConfig(status_forcelist=[429, 500, 502])
+        assert config.status_forcelist == [429, 500, 502]
+
+        # Test deduplication and sorting
+        config = RetryConfig(status_forcelist=[500, 429, 500, 502])
+        assert config.status_forcelist == [429, 500, 502]
+
+    def test_validate_status_codes_invalid(self):
+        """Test invalid status code lists."""
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(status_forcelist=[99])
+        assert "Invalid HTTP status code" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(status_forcelist=[600])
+        assert "Invalid HTTP status code" in str(exc_info.value)
+
+        # Pydantic validates types before our validator runs
+        with pytest.raises(ValidationError) as exc_info:
+            RetryConfig(status_forcelist=["not_an_int"])
+        # Pydantic will raise a type validation error before our validator runs
+        assert "valid integer" in str(exc_info.value) or "Input should be" in str(
+            exc_info.value
+        )
+
+
+@pytest.mark.unit
+class TestServerConfigTimeouts:
+    """Test cases for ServerConfig timeout validation."""
+
+    def test_validate_timeout_valid(self):
+        """Test valid timeout values."""
+        config = ServerConfig(git_command_timeout=1, api_request_timeout=60)
+        assert config.git_command_timeout == 1
+        assert config.api_request_timeout == 60
+
+    def test_validate_timeout_invalid(self):
+        """Test invalid timeout values."""
+        with pytest.raises(ValidationError) as exc_info:
+            ServerConfig(git_command_timeout=0)
+        assert "must be at least 1 second" in str(exc_info.value)
+
+        with pytest.raises(ValidationError) as exc_info:
+            ServerConfig(api_request_timeout=3601)
+        assert "cannot exceed 3600 seconds" in str(exc_info.value)
 
 
 @pytest.mark.unit

@@ -12,10 +12,12 @@ from src.shared.config import TemplatesStyleConfig
 from src.shared.errors import (
     DocsCopilotError,
     ErrorCode,
+    SecurityError,
     TemplateNotFoundError,
     ValidationError,
 )
 from src.shared.logging import setup_logging
+from src.shared.security import SecurityValidator
 from src.shared.validation import validate_doc_type
 from src.templates_style_server.models import Glossary, StyleGuide, Template
 from src.templates_style_server.template_loader import TemplateLoader
@@ -117,6 +119,9 @@ async def call_tool(
         elif name == "get_style_guide":
             product = arguments.get("product")
 
+            # Validate product name for security
+            product = SecurityValidator.validate_product_name(product)
+
             data, source = template_loader.get_style_guide(product)
 
             style_guide = StyleGuide(
@@ -150,6 +155,22 @@ async def call_tool(
         else:
             raise ValueError(f"Unknown tool: {name}")
 
+    except SecurityError as e:
+        logger.warning(f"Security validation error: {e.message}")
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "error": "SecurityError",
+                        "message": e.message,
+                        "details": e.details,
+                        "error_code": ErrorCode.VALIDATION_ERROR.value,
+                    },
+                    indent=2,
+                ),
+            )
+        ]
     except ValidationError as e:
         logger.warning(f"Validation error: {e.message}")
         return [
